@@ -1,0 +1,398 @@
+openapi: 3.0.3
+info:
+  title: Sougen API
+  description: ヒートマップデータ管理のためのREST API
+  version: 0.1.0
+  
+servers:
+  - url: http://localhost:8080
+    description: 開発サーバー
+  
+tags:
+  - name: health
+    description: ヘルスチェックエンドポイント
+  - name: projects
+    description: プロジェクト関連のエンドポイント
+  - name: records
+    description: レコード関連のエンドポイント
+  - name: visualizations
+    description: 可視化関連のエンドポイント
+    
+paths:
+  /healthz:
+    get:
+      tags:
+        - health
+      summary: ヘルスチェック
+      description: APIサーバーの稼働状態を確認します。
+      operationId: healthCheck
+      responses:
+        '200':
+          description: サーバーが正常に稼働中
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /v0/p/{project_name}:
+    parameters:
+      - name: project_name
+        in: path
+        description: プロジェクト名
+        required: true
+        schema:
+          type: string
+    
+    get:
+      tags:
+        - projects
+      summary: プロジェクト情報取得
+      description: 指定されたプロジェクトの情報を取得します。
+      operationId: getProject
+      security:
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: プロジェクト情報の取得に成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectInfo'
+        '404':
+          description: プロジェクトに登録されたレコードが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    delete:
+      tags:
+        - projects
+      summary: プロジェクト削除
+      description: 指定されたプロジェクトとそのレコードをすべて削除します。
+      operationId: deleteProject
+      security:
+        - apiKeyAuth: []
+      responses:
+        '204':
+          description: プロジェクトの削除に成功
+        '404':
+          description: プロジェクトが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/p/{project_name}/r:
+    parameters:
+      - name: project_name
+        in: path
+        description: プロジェクト名
+        required: true
+        schema:
+          type: string
+    
+    get:
+      tags:
+        - records
+      summary: プロジェクトのレコード一覧取得
+      description: 指定されたプロジェクトのレコード一覧を取得します。
+      operationId: listRecords
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: 取得開始日時（ISO8601形式）
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: 取得終了日時（ISO8601形式）
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: 取得件数の上限
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+        - name: offset
+          in: query
+          description: 取得開始位置のオフセット
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: レコード一覧の取得に成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Record'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      tags:
+        - records
+      summary: レコード作成
+      description: 指定されたプロジェクトに新しいレコードを作成します。
+      operationId: createRecord
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        description: 作成するレコードのデータ
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordCreate'
+      responses:
+        '201':
+          description: レコードの作成に成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Record'
+        '400':
+          description: リクエストが不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/p/{project_name}/r/{record_id}:
+    parameters:
+      - name: project_name
+        in: path
+        description: プロジェクト名
+        required: true
+        schema:
+          type: string
+      - name: record_id
+        in: path
+        description: レコードID（UUID）
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    get:
+      tags:
+        - records
+      summary: レコード取得
+      description: 指定されたプロジェクトの特定レコードを取得します。
+      operationId: getRecord
+      security:
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: レコードの取得に成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Record'
+        '404':
+          description: レコードが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    delete:
+      tags:
+        - records
+      summary: レコード削除
+      description: 指定されたプロジェクトの特定レコードを削除します。
+      operationId: deleteRecord
+      security:
+        - apiKeyAuth: []
+      responses:
+        '204':
+          description: レコードの削除に成功
+        '404':
+          description: レコードが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v0/p/{project_name}/graph.svg:
+    parameters:
+      - name: project_name
+        in: path
+        description: プロジェクト名
+        required: true
+        schema:
+          type: string
+    
+    get:
+      tags:
+        - visualizations
+      summary: ヒートマップグラフ取得
+      description: 指定されたプロジェクトのヒートマップグラフデータを取得します。
+      operationId: getGraph
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: 取得開始日時（ISO8601形式）
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: 取得終了日時（ISO8601形式）
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: グラフデータの取得に成功
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        '404':
+          description: プロジェクトが見つかりません
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: APIリクエストに使用する認証トークン
+  
+  schemas:
+    ProjectInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          description: プロジェクト名
+        record_count:
+          type: integer
+          description: レコード数
+        total_value:
+          type: integer
+          description: 合計値
+        first_record_at:
+          type: string
+          format: date-time
+          description: 最初のレコードの日時
+        last_record_at:
+          type: string
+          format: date-time
+          description: 最新のレコードの日時
+      required:
+        - name
+        - record_count
+        - total_value
+        - first_record_at
+        - last_record_at
+    
+    Record:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: レコードID
+        project:
+          type: string
+          description: プロジェクト名
+        value:
+          type: integer
+          description: 記録値
+        done_at:
+          type: string
+          format: date-time
+          description: アクティビティの日時
+      required:
+        - id
+        - project
+        - value
+        - done_at
+    
+    RecordCreate:
+      type: object
+      properties:
+        value:
+          type: integer
+          description: 記録値
+        done_at:
+          type: string
+          format: date-time
+          description: アクティビティの日時（省略時は現在時刻）
+      required:
+        - value
+    
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: エラーメッセージ
+        code:
+          type: integer
+          description: エラーコード
+      required:
+        - error
