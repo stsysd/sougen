@@ -51,12 +51,12 @@ func (s *Server) routes() {
 	securedHandler.HandleFunc("GET /v0/p/{project_name}/r/{record_id}", s.handleGetRecord)
 	securedHandler.HandleFunc("DELETE /v0/p/{project_name}/r/{record_id}", s.handleDeleteRecord)
 
-	// Graph endpoints - support both with and without .svg extension
-	securedHandler.HandleFunc("GET /v0/p/{project_name}/graph.svg", s.handleGetGraph)
-	securedHandler.HandleFunc("GET /v0/p/{project_name}/graph", s.handleGetGraph)
-
 	// 認証ミドルウェアを適用し、メインルータにマウント
 	s.router.Handle("/*", s.authMiddleware(securedHandler))
+
+	// Graph endpoints - support both with and without .svg extension
+	s.router.HandleFunc("GET /v0/p/{project_name}/graph.svg", s.handleGetGraph)
+	s.router.HandleFunc("GET /v0/p/{project_name}/graph", s.handleGetGraph)
 }
 
 // ServeHTTP はServer構造体をhttp.Handlerとして実装します。
