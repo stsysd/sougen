@@ -123,8 +123,15 @@ func GenerateDailyHeatmapSVG(data []DailyData, opts *Options) string {
 			}
 			x := opts.CellPadding + w*(opts.CellSize+opts.CellPadding)
 			y := opts.CellPadding + opts.FontSize + 4 + i*(opts.CellSize+opts.CellPadding)
-			sb.WriteString(fmt.Sprintf(`  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" data-date="%s" data-count="%d"/>`+"\n",
+
+			// 各セルに矩形と、その中にtitle要素（ツールチップ）を追加
+			sb.WriteString(fmt.Sprintf(`  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" data-date="%s" data-count="%d">`+"\n",
 				x, y, opts.CellSize, opts.CellSize, opts.Colors[level], key, count))
+
+			// 日付をフォーマットして表示用の文字列を作成
+			displayDate := current.Format("2006年01月02日")
+			sb.WriteString(fmt.Sprintf(`    <title>%s: %d</title>`+"\n", displayDate, count))
+			sb.WriteString(`  </rect>` + "\n")
 		}
 	}
 
