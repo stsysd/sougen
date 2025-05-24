@@ -1074,3 +1074,165 @@ func TestDeleteNonExistentProject(t *testing.T) {
 		t.Errorf("Expected status NoContent, got %v", rec.Code)
 	}
 }
+
+// TestHandleGetGraph は指定プロジェクトのヒートマップグラフ生成・返却をテストします。
+func TestHandleGetGraph(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクト名
+	projectName := "test-project"
+
+	// テスト用のレコードを作成
+	now := time.Now()
+	record1, err := model.NewRecord(now.AddDate(0, 0, -7), projectName, 5)
+	if err != nil {
+		t.Fatalf("Failed to create test record: %v", err)
+	}
+	mockStore.CreateRecord(record1)
+
+	// リクエストの作成
+	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph", nil)
+	req.Header.Set("X-API-Key", testAPIToken)
+	w := httptest.NewRecorder()
+
+	// ハンドラの実行
+	server.ServeHTTP(w, req)
+
+	// レスポンスのステータスコードを確認
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		return
+	}
+
+	// SVG形式のレスポンスが返されたか確認
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/svg+xml" {
+		t.Errorf("Expected Content-Type 'image/svg+xml', got '%s'", contentType)
+	}
+
+	// レスポンスボディがSVG形式であるか簡易チェック
+	body := w.Body.String()
+	if !strings.Contains(body, "<svg") {
+		t.Errorf("Response does not contain SVG content")
+	}
+}
+
+// TestHandleGetGraphWithTrackParam はtrackパラメータを使ったアクセスカウンター機能をテストします。
+func TestHandleGetGraphWithTrackParam(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクト名
+	projectName := "counter-test"
+
+	// trackパラメータ付きのリクエストを作成
+	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph?track", nil)
+	req.Header.Set("X-API-Key", testAPIToken)
+	w := httptest.NewRecorder()
+
+	// 実行前のレコード数を記録
+	countBefore := len(mockStore.records)
+
+	// ハンドラの実行
+	server.ServeHTTP(w, req)
+
+	// レスポンスのステータスコードを確認
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		return
+	}
+
+	// レコードが1つ追加されたか確認
+	countAfter := len(mockStore.records)
+	if countAfter != countBefore+1 {
+		t.Errorf("Expected %d records after tracking, got %d", countBefore+1, countAfter)
+	}
+
+	// 追加されたレコードの内容を確認
+	var foundRecord *model.Record
+	for _, record := range mockStore.records {
+		if record.Project == projectName {
+			foundRecord = record
+			break
+		}
+	}
+
+	if foundRecord == nil {
+		t.Errorf("No record created for project %s", projectName)
+		return
+	}
+
+	// レコードの値が1であることを確認
+	if foundRecord.Value != 1 {
+		t.Errorf("Expected record value to be 1, got %d", foundRecord.Value)
+	}
+
+	// レコードの日時が現在時刻に近いことを確認（前後5分以内）
+	now := time.Now()
+	fiveMinutesAgo := now.Add(-5 * time.Minute)
+	fiveMinutesLater := now.Add(5 * time.Minute)
+
+	if foundRecord.DoneAt.Before(fiveMinutesAgo) || foundRecord.DoneAt.After(fiveMinutesLater) {
+		t.Errorf("Record timestamp is not within expected range: %v", foundRecord.DoneAt)
+	}
+}
+
+// TestHandleGetGraphWithoutTrackParam はtrackパラメータなしの場合にレコードが作成されないことをテストします。
+func TestHandleGetGraphWithoutTrackParam(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクト名
+	projectName := "no-counter-test"
+
+	// trackパラメータなしのリクエストを作成
+	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph", nil)
+	req.Header.Set("X-API-Key", testAPIToken)
+	w := httptest.NewRecorder()
+
+	// 実行前のレコード数を記録
+	countBefore := len(mockStore.records)
+
+	// ハンドラの実行
+	server.ServeHTTP(w, req)
+
+	// レコード数が変わっていないことを確認
+	countAfter := len(mockStore.records)
+	if countAfter != countBefore {
+		t.Errorf("Expected no new records, but got %d records (was: %d)", countAfter, countBefore)
+	}
+}
+
+// TestHandleGetGraphSVGExtension はSVG拡張子付きのURLでグラフを取得できることをテストします。
+func TestHandleGetGraphSVGExtension(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクト名
+	projectName := "svg-ext-test"
+
+	// .svg拡張子付きのリクエストを作成
+	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph.svg", nil)
+	req.Header.Set("X-API-Key", testAPIToken)
+	w := httptest.NewRecorder()
+
+	// ハンドラの実行
+	server.ServeHTTP(w, req)
+
+	// レスポンスのステータスコードを確認
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		return
+	}
+
+	// SVG形式のレスポンスが返されたか確認
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/svg+xml" {
+		t.Errorf("Expected Content-Type 'image/svg+xml', got '%s'", contentType)
+	}
+}

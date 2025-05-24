@@ -260,6 +260,22 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	// クエリパラメータの解析（from, to）
 	query := r.URL.Query()
 
+	// アクセスカウンター機能: trackパラメータがある場合、レコードを自動作成
+	if query.Has("track") {
+		// 新しいレコードの作成（現在時刻、値は1）
+		record, err := model.NewRecord(time.Now(), projectName, 1)
+		if err != nil {
+			log.Printf("Error creating access counter record: %v", err)
+			// エラーが発生してもグラフ表示は続行するため、エラーレスポンスは返さない
+		} else {
+			// レコードの保存
+			if err := s.store.CreateRecord(record); err != nil {
+				log.Printf("Error saving access counter record: %v", err)
+				// エラーが発生してもグラフ表示は続行
+			}
+		}
+	}
+
 	// デフォルトの日付範囲を設定: 1年前から今日まで
 	now := time.Now()
 	defaultFrom := now.AddDate(-1, 0, 0)
