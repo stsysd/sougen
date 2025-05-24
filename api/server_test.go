@@ -274,6 +274,124 @@ func TestCreateRecordWithoutDoneAt(t *testing.T) {
 	}
 }
 
+func TestCreateRecordWithoutValue(t *testing.T) {
+	// valueフィールドが省略された場合にデフォルト値1が設定されることをテスト
+
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクト名
+	projectName := "exercise"
+
+	// valueを省略したテストリクエストデータ
+	reqBody := map[string]interface{}{
+		"done_at": "2025-05-21T14:30:00Z",
+		// valueは意図的に省略
+	}
+	reqBytes, _ := json.Marshal(reqBody)
+
+	// リクエストの作成
+	req := httptest.NewRequest(http.MethodPost, "/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIToken)
+
+	// レスポンスレコーダーの作成
+	w := httptest.NewRecorder()
+
+	// ハンドラの実行
+	server.ServeHTTP(w, req)
+
+	// レスポンスのステータスコードを確認
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status code %d, got %d", http.StatusCreated, w.Code)
+		t.Logf("Response body: %s", w.Body.String())
+		return
+	}
+
+	// レスポンスボディをデコード
+	var responseRecord model.Record
+	if err := json.NewDecoder(w.Body).Decode(&responseRecord); err != nil {
+		t.Fatalf("Failed to decode response body: %v", err)
+	}
+
+	// DoneAt の確認
+	expectedDoneAt := reqBody["done_at"].(string)
+	doneAtStr := responseRecord.DoneAt.Format(time.RFC3339)
+	if doneAtStr != expectedDoneAt {
+		t.Errorf("Expected DoneAt %s, got %s", expectedDoneAt, doneAtStr)
+	}
+
+	// プロジェクト名の確認
+	if responseRecord.Project != projectName {
+		t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
+	}
+
+	// デフォルト値の確認
+	expectedValue := 1 // 省略時のデフォルト値
+	if responseRecord.Value != expectedValue {
+		t.Errorf("Expected default Value %d, got %d", expectedValue, responseRecord.Value)
+	}
+}
+
+func TestCreateRecordWithEmptyBody(t *testing.T) {
+	// リクエストボディが空の場合のテスト
+
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクト名
+	projectName := "exercise"
+
+	// 空のリクエストボディ
+	req := httptest.NewRequest(http.MethodPost, "/v0/p/"+projectName+"/r", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIToken)
+
+	// レスポンスレコーダーの作成
+	w := httptest.NewRecorder()
+
+	// テスト時刻を記録
+	beforeTime := time.Now()
+
+	// ハンドラの実行
+	server.ServeHTTP(w, req)
+
+	// テスト終了時刻を記録
+	afterTime := time.Now()
+
+	// レスポンスのステータスコードを確認
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status code %d, got %d", http.StatusCreated, w.Code)
+		t.Logf("Response body: %s", w.Body.String())
+		return
+	}
+
+	// レスポンスボディをデコード
+	var responseRecord model.Record
+	if err := json.NewDecoder(w.Body).Decode(&responseRecord); err != nil {
+		t.Fatalf("Failed to decode response body: %v", err)
+	}
+
+	// doneAtが現在時刻付近であることを確認（空リクエストの場合も現在時刻が設定される）
+	if responseRecord.DoneAt.Before(beforeTime) || responseRecord.DoneAt.After(afterTime) {
+		t.Errorf("Expected DoneAt to be between %v and %v, got %v",
+			beforeTime, afterTime, responseRecord.DoneAt)
+	}
+
+	// プロジェクト名の確認
+	if responseRecord.Project != projectName {
+		t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
+	}
+
+	// デフォルト値の確認
+	expectedValue := 1 // 空リクエストの場合のデフォルト値
+	if responseRecord.Value != expectedValue {
+		t.Errorf("Expected default Value %d, got %d", expectedValue, responseRecord.Value)
+	}
+}
+
 func TestGetRecordEndpoint(t *testing.T) {
 	// モックストアの準備
 	mockStore := NewMockRecordStore()

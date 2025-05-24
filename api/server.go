@@ -87,12 +87,15 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	// リクエストボディからデータを読み込み
 	var reqBody struct {
 		DoneAt string `json:"done_at"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
-		Value  int    `json:"value"`
+		Value  *int   `json:"value"`   // レコードの値, 省略可能
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+	// リクエストボディが存在する場合はデコード
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// doneAt の処理: 省略された場合は現在時刻を使用
@@ -110,8 +113,20 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// value の処理: 省略された場合はデフォルト値1を使用
+	if reqBody.Value == nil {
+		defaultValue := 1
+		reqBody.Value = &defaultValue
+	}
+
+	// value のチェック: 必ず1以上の整数であることを確認
+	if *reqBody.Value < 1 {
+		http.Error(w, "Value must be a positive integer greater than 0", http.StatusBadRequest)
+		return
+	}
+
 	// 新しいレコードの作成
-	record, err := model.NewRecord(doneAt, projectName, reqBody.Value)
+	record, err := model.NewRecord(doneAt, projectName, *reqBody.Value)
 	if err != nil {
 		log.Printf("Error creating record: %v", err)
 		http.Error(w, "Failed to create record", http.StatusBadRequest)
