@@ -313,6 +313,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /v0/r:
+    delete:
+      tags:
+        - records
+      summary: レコード一括削除
+      description: 指定された日時より前のレコードをまとめて削除します。
+      operationId: bulkDeleteRecords
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: until
+          in: query
+          description: この日時より前のレコードを削除（ISO8601形式）
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: project
+          in: query
+          description: 削除対象のプロジェクト名（指定しない場合は全プロジェクト）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: レコードの一括削除に成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+                    description: 削除されたレコードの数
+                required:
+                  - deleted_count
+        '400':
+          description: リクエストが不正
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: サーバーエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
 components:
   securitySchemes:
     apiKeyAuth:

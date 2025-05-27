@@ -98,6 +98,27 @@ func (m *MockRecordStore) DeleteProject(projectName string) error {
 	return nil
 }
 
+func (m *MockRecordStore) DeleteRecordsUntil(project string, until time.Time) (int, error) {
+	count := 0
+	// 条件に一致するレコードをIDリストに収集
+	var idsToDelete []string
+
+	for id, record := range m.records {
+		// プロジェクト指定がない、または一致するプロジェクトかつ指定日時より前
+		if (project == "" || record.Project == project) && record.DoneAt.Before(until) {
+			idsToDelete = append(idsToDelete, id)
+		}
+	}
+
+	// 収集したIDのレコードを削除
+	for _, id := range idsToDelete {
+		delete(m.records, id)
+		count++
+	}
+
+	return count, nil
+}
+
 func (m *MockRecordStore) GetProjectInfo(projectName string) (*model.ProjectInfo, error) {
 	var recordCount int
 	var totalValue int
@@ -1234,5 +1255,150 @@ func TestHandleGetGraphSVGExtension(t *testing.T) {
 	contentType := w.Header().Get("Content-Type")
 	if contentType != "image/svg+xml" {
 		t.Errorf("Expected Content-Type 'image/svg+xml', got '%s'", contentType)
+	}
+}
+
+// TestBulkDeleteRecords はレコード一括削除APIのテスト
+func TestBulkDeleteRecords(t *testing.T) {
+	// プロジェクト名
+	project1 := "project1"
+	project2 := "project2"
+
+	// テスト用の基準日時
+	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+
+	// テストケース
+	tests := []struct {
+		name           string
+		project        string
+		until          time.Time
+		expectedStatus int
+		expectedCount  int
+	}{
+		{
+			name:           "特定プロジェクトの一部レコード削除",
+			project:        project1,
+			until:          baseTime.AddDate(0, 0, 3), // 3日目までのレコードを削除
+			expectedStatus: http.StatusOK,
+			expectedCount:  3, // 3日分のレコードが削除される
+		},
+		{
+			name:           "特定プロジェクトの全レコード削除",
+			project:        project2,
+			until:          baseTime.AddDate(1, 0, 0), // 十分後の日付
+			expectedStatus: http.StatusOK,
+			expectedCount:  3, // project2の全レコードが削除される
+		},
+		{
+			name:           "全プロジェクトの一部レコード削除",
+			project:        "",                        // プロジェクト指定なし
+			until:          baseTime.AddDate(0, 0, 2), // 2日目までのレコードを削除
+			expectedStatus: http.StatusOK,
+			expectedCount:  4, // 両方のプロジェクトから2日分ずつ
+		},
+		{
+			name:           "該当レコードなし",
+			project:        project1,
+			until:          baseTime.AddDate(0, 0, -1), // ベース時間より前（該当レコードなし）
+			expectedStatus: http.StatusOK,
+			expectedCount:  0, // 該当するレコードがない
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// 各テストケースごとに新しいモックストアを作成
+			mockStore := NewMockRecordStore()
+
+			// project1のレコードを作成（5件）
+			for i := 0; i < 5; i++ {
+				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
+				record, _ := model.NewRecord(recordTime, project1, i+1)
+				mockStore.CreateRecord(record)
+			}
+
+			// project2のレコードを作成（3件）
+			for i := 0; i < 3; i++ {
+				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
+				record, _ := model.NewRecord(recordTime, project2, i+10)
+				mockStore.CreateRecord(record)
+			}
+
+			// 各テストケースごとに新しいサーバーも作成
+			server := NewServer(mockStore, newTestConfig())
+
+			// リクエストURLの組み立て
+			url := "/v0/r?until=" + tc.until.Format(time.RFC3339)
+			if tc.project != "" {
+				url += "&project=" + tc.project
+			}
+
+			req := httptest.NewRequest(http.MethodDelete, url, nil)
+			req.Header.Set("X-API-Key", testAPIToken)
+			w := httptest.NewRecorder()
+
+			// リクエスト実行
+			server.ServeHTTP(w, req)
+
+			// ステータスコードの確認
+			if w.Code != tc.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tc.expectedStatus, w.Code)
+				return
+			}
+
+			// レスポンスのパース
+			var response map[string]interface{}
+			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			// 削除件数の確認
+			deletedCount, ok := response["deleted_count"].(float64)
+			if !ok {
+				t.Fatalf("Expected deleted_count in response, got: %v", response)
+			}
+
+			if int(deletedCount) != tc.expectedCount {
+				t.Errorf("Expected %d deleted records, got %d", tc.expectedCount, int(deletedCount))
+			}
+		})
+	}
+}
+
+// TestBulkDeleteRecordsWithInvalidParams はレコード一括削除APIの不正パラメータのテスト
+func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テストケース
+	tests := []struct {
+		name           string
+		url            string
+		expectedStatus int
+	}{
+		{
+			name:           "until パラメータ不足",
+			url:            "/v0/r",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "不正な until フォーマット",
+			url:            "/v0/r?until=invalid-date",
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, tc.url, nil)
+			req.Header.Set("X-API-Key", testAPIToken)
+			w := httptest.NewRecorder()
+
+			server.ServeHTTP(w, req)
+
+			if w.Code != tc.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tc.expectedStatus, w.Code)
+			}
+		})
 	}
 }

@@ -50,6 +50,7 @@ func (s *Server) routes() {
 	securedHandler.HandleFunc("GET /v0/p/{project_name}/r", s.handleListRecords)
 	securedHandler.HandleFunc("GET /v0/p/{project_name}/r/{record_id}", s.handleGetRecord)
 	securedHandler.HandleFunc("DELETE /v0/p/{project_name}/r/{record_id}", s.handleDeleteRecord)
+	securedHandler.HandleFunc("DELETE /v0/r", s.handleBulkDeleteRecords)
 
 	// 認証ミドルウェアを適用し、メインルータにマウント
 	s.router.Handle("/*", s.authMiddleware(securedHandler))
@@ -527,6 +528,48 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 
 	// 成功した場合は204 No Contentを返す
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleBulkDeleteRecords は条件に一致するレコードをまとめて削除するハンドラーです。
+func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request) {
+	// クエリパラメータの解析
+	query := r.URL.Query()
+
+	// projectパラメータの取得（オプション）
+	project := query.Get("project")
+
+	// 必須パラメータ: until (この日時より前のレコードを削除)
+	untilStr := query.Get("until")
+	if untilStr == "" {
+		http.Error(w, "until parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// 日時のパース
+	untilTime, err := time.Parse(time.RFC3339, untilStr)
+	if err != nil {
+		http.Error(w, "Invalid until parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
+		return
+	}
+
+	// レコードの一括削除を実行
+	count, err := s.store.DeleteRecordsUntil(project, untilTime)
+	if err != nil {
+		log.Printf("Error deleting records until specified date: %v", err)
+		http.Error(w, "Failed to delete records", http.StatusInternalServerError)
+		return
+	}
+
+	// 削除結果をJSONで返す
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]int{
+		"deleted_count": count,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
+	}
 }
 
 // parseInt は文字列を整数に変換し、エラーハンドリングを行います。

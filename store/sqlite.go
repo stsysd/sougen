@@ -24,6 +24,8 @@ type RecordStore interface {
 	DeleteRecord(id uuid.UUID) error
 	// DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
 	DeleteProject(projectName string) error
+	// DeleteRecordsUntil は指定日時より前のレコードを削除します。
+	DeleteRecordsUntil(project string, until time.Time) (int, error)
 	// ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
 	ListRecords(project string, from, to time.Time) ([]*model.Record, error)
 	// GetProjectInfo は指定されたプロジェクトの情報を取得します。
@@ -322,4 +324,56 @@ func (s *SQLiteStore) DeleteProject(projectName string) error {
 	tx = nil // コミットが成功したのでnilにして遅延関数でのロールバックを防ぐ
 
 	return nil
+}
+
+// DeleteRecordsUntil は指定日時より前のレコードを削除します。
+func (s *SQLiteStore) DeleteRecordsUntil(project string, until time.Time) (int, error) {
+	// トランザクションの開始
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// トランザクションをロールバックするための遅延関数
+	defer func() {
+		if tx != nil {
+			tx.Rollback() // 成功した場合は既にnilになっているためエラーは無視
+		}
+	}()
+
+	// 日時を文字列に変換
+	untilStr := until.Format(time.RFC3339)
+
+	var result sql.Result
+	if project == "" {
+		// 特定のプロジェクト指定がない場合は全プロジェクトから削除
+		result, err = tx.Exec(
+			`DELETE FROM records WHERE done_at < ?`,
+			untilStr,
+		)
+	} else {
+		// 特定プロジェクトのレコードを削除
+		result, err = tx.Exec(
+			`DELETE FROM records WHERE project = ? AND done_at < ?`,
+			project, untilStr,
+		)
+	}
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete records until specified date: %w", err)
+	}
+
+	// 削除された行数を取得
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	tx = nil // コミットが成功したのでnilにして遅延関数でのロールバックを防ぐ
+
+	return int(rowsAffected), nil
 }
