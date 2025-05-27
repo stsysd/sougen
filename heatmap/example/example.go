@@ -16,20 +16,20 @@ func main() {
 	data := generateYearData()
 
 	// Create SVG heatmap
-	svg := heatmap.GenerateDailyHeatmapSVG(data, nil)
+	svg := heatmap.GenerateYearlyHeatmapSVG(data, nil)
 
 	// Output to stdout
 	fmt.Println(svg)
 }
 
 // generateYearData creates random activity data for the past year
-func generateYearData() []heatmap.DailyData {
+func generateYearData() []heatmap.Data {
 	// Start from one year ago
 	endDate := time.Now()
 	startDate := endDate.AddDate(-1, 0, 0)
 
 	// Create data array in ascending order (newest last)
-	var data []heatmap.DailyData
+	var data []heatmap.Data
 
 	// Fill with data for each day
 	current := startDate
@@ -50,7 +50,7 @@ func generateYearData() []heatmap.DailyData {
 
 		if count != 0 {
 			// Add the data point
-			data = append(data, heatmap.DailyData{
+			data = append(data, heatmap.Data{
 				Date:  current,
 				Count: count,
 			})

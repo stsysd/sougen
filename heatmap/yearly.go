@@ -1,5 +1,5 @@
-// daily_heatmap.go
-// Generates a GitHub-like daily contribution heatmap as an SVG string in Go.
+// yearly_heatmap.go
+// Generates a GitHub-like yearly contribution heatmap as an SVG string in Go.
 package heatmap
 
 import (
@@ -8,24 +8,8 @@ import (
 	"time"
 )
 
-// DailyData holds the date and count for each day.
-type DailyData struct {
-	Date  time.Time
-	Count int
-}
-
-// Options configures rendering parameters and value ranges.
-type Options struct {
-	CellSize    int      // size of each day cell (px)
-	CellPadding int      // padding between cells (px)
-	Colors      []string // array of N CSS colors for levels 0..N-1
-	FontSize    int      // font size for month labels (px)
-	FontFamily  string   // font family for labels
-	ValueRanges []int    // optional thresholds for levels 1..N-1; len(ValueRanges)==len(Colors)-1
-}
-
-// GenerateDailyHeatmapSVG returns an SVG string representing the daily heatmap.
-func GenerateDailyHeatmapSVG(data []DailyData, opts *Options) string {
+// GenerateYearlyHeatmapSVG returns an SVG string representing the yearly heatmap.
+func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	// default options
 	if opts == nil {
 		opts = &Options{

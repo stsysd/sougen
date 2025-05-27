@@ -329,12 +329,12 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	toDate := time.Date(toTime.Year(), toTime.Month(), toTime.Day(), 0, 0, 0, 0, toTime.Location())
 
 	// ヒートマップ用データの作成（範囲内のすべての日を含む）
-	var dailyData []heatmap.DailyData
+	var data []heatmap.Data
 	currentDate := fromDate
 	for !currentDate.After(toDate) {
 		dateString := currentDate.Format("2006-01-02")
 		count := dateMap[dateString] // マップに存在しない場合は0を返す
-		dailyData = append(dailyData, heatmap.DailyData{
+		data = append(data, heatmap.Data{
 			Date:  currentDate,
 			Count: count,
 		})
@@ -342,7 +342,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// データがない場合（日付範囲が無効な場合のみ）
-	if len(dailyData) == 0 {
+	if len(data) == 0 {
 		svg := ""
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.Write([]byte(svg))
@@ -350,8 +350,8 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SVGの生成
-	// NOTE: dailyDataは昇順であることを前提としている
-	svg := heatmap.GenerateDailyHeatmapSVG(dailyData, nil)
+	// NOTE: Dataは昇順であることを前提としている
+	svg := heatmap.GenerateYearlyHeatmapSVG(data, nil)
 
 	// レスポンスの返却
 	w.Header().Set("Content-Type", "image/svg+xml")

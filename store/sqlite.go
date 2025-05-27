@@ -64,17 +64,17 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 
 // initTables はデータベーステーブルを初期化します。
 func initTables(db *sql.DB) error {
-	// daily_recordsテーブルの作成
+	// recordsテーブルの作成
 	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS daily_records (
+		CREATE TABLE IF NOT EXISTS records (
 			id TEXT PRIMARY KEY,
 			project TEXT NOT NULL,
 			value INTEGER NOT NULL,
 			done_at TEXT NOT NULL
 		);
 		
-		CREATE INDEX IF NOT EXISTS idx_daily_records_project_done_at 
-		ON daily_records(project, done_at);
+		CREATE INDEX IF NOT EXISTS idx_records_project_done_at 
+		ON records(project, done_at);
 	`)
 	return err
 }
@@ -91,7 +91,7 @@ func (s *SQLiteStore) CreateRecord(record *model.Record) error {
 
 	// レコードの挿入
 	_, err := s.db.Exec(
-		`INSERT INTO daily_records 
+		`INSERT INTO records 
 		(id, project, value, done_at)
 		VALUES (?, ?, ?, ?)`,
 		record.ID.String(),
@@ -106,7 +106,7 @@ func (s *SQLiteStore) CreateRecord(record *model.Record) error {
 // GetRecord は指定されたIDのレコードを取得します。
 func (s *SQLiteStore) GetRecord(id uuid.UUID) (*model.Record, error) {
 	row := s.db.QueryRow(
-		`SELECT project, value, done_at FROM daily_records WHERE id = ?`,
+		`SELECT project, value, done_at FROM records WHERE id = ?`,
 		id.String(),
 	)
 
@@ -156,7 +156,7 @@ func (s *SQLiteStore) ListRecords(project string, from, to time.Time) ([]*model.
 
 	// SQLクエリの実行
 	rows, err := s.db.Query(
-		`SELECT id, value, done_at FROM daily_records 
+		`SELECT id, value, done_at FROM records 
 		WHERE project = ? AND done_at BETWEEN ? AND ? 
 		ORDER BY done_at`,
 		project, fromStr, toStr,
@@ -214,7 +214,7 @@ func (s *SQLiteStore) Close() error {
 // DeleteRecord は指定されたIDのレコードを削除します。
 func (s *SQLiteStore) DeleteRecord(id uuid.UUID) error {
 	result, err := s.db.Exec(
-		`DELETE FROM daily_records WHERE id = ?`,
+		`DELETE FROM records WHERE id = ?`,
 		id.String(),
 	)
 	if err != nil {
@@ -244,7 +244,7 @@ func (s *SQLiteStore) GetProjectInfo(projectName string) (*model.ProjectInfo, er
 			COALESCE(SUM(value), 0) as total_value,
 			MIN(done_at) as first_record_at,
 			MAX(done_at) as last_record_at
-		FROM daily_records
+		FROM records
 		WHERE project = ?
 	`
 
@@ -308,7 +308,7 @@ func (s *SQLiteStore) DeleteProject(projectName string) error {
 
 	// プロジェクトの全レコードを削除
 	_, err = tx.Exec(
-		`DELETE FROM daily_records WHERE project = ?`,
+		`DELETE FROM records WHERE project = ?`,
 		projectName,
 	)
 	if err != nil {
