@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -45,13 +46,13 @@ func TestCreateAndGetRecord(t *testing.T) {
 	}
 
 	// レコードを作成
-	err = store.CreateRecord(record)
+	err = store.CreateRecord(context.Background(), record)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
 
 	// 作成したレコードを取得
-	retrievedRecord, err := store.GetRecord(record.ID)
+	retrievedRecord, err := store.GetRecord(context.Background(), record.ID)
 	if err != nil {
 		t.Fatalf("Failed to get record: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestGetNonExistentRecord(t *testing.T) {
 
 	// 存在しない妥当なUUIDでレコードを取得
 	nonExistentID := uuid.New()
-	_, err := store.GetRecord(nonExistentID)
+	_, err := store.GetRecord(context.Background(), nonExistentID)
 	if err == nil {
 		t.Error("Expected error when getting non-existent record, got nil")
 	}
@@ -102,7 +103,7 @@ func TestCreateInvalidRecord(t *testing.T) {
 	}
 
 	// レコードの作成が失敗することを確認
-	err := store.CreateRecord(invalidRecord)
+	err := store.CreateRecord(context.Background(), invalidRecord)
 	if err == nil {
 		t.Error("Expected validation error when creating invalid record, got nil")
 	}
@@ -120,19 +121,19 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// レコードを保存
-	err = store.CreateRecord(record)
+	err = store.CreateRecord(context.Background(), record)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
 
 	// レコードを削除
-	err = store.DeleteRecord(record.ID)
+	err = store.DeleteRecord(context.Background(), record.ID)
 	if err != nil {
 		t.Fatalf("Failed to delete record: %v", err)
 	}
 
 	// 削除したレコードが存在しないことを確認
-	_, err = store.GetRecord(record.ID)
+	_, err = store.GetRecord(context.Background(), record.ID)
 	if err == nil {
 		t.Error("Expected error when getting deleted record, got nil")
 	}
@@ -142,7 +143,7 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// 存在しないレコードの削除を試みる
-	err = store.DeleteRecord(uuid.New())
+	err = store.DeleteRecord(context.Background(), uuid.New())
 	if err == nil {
 		t.Error("Expected error when deleting non-existent record, got nil")
 	}
@@ -175,7 +176,7 @@ func TestListRecords(t *testing.T) {
 			t.Fatalf("Failed to create record: %v", err)
 		}
 
-		err = store.CreateRecord(record)
+		err = store.CreateRecord(context.Background(), record)
 		if err != nil {
 			t.Fatalf("Failed to store record: %v", err)
 		}
@@ -186,7 +187,7 @@ func TestListRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
-	err = store.CreateRecord(otherRecord)
+	err = store.CreateRecord(context.Background(), otherRecord)
 	if err != nil {
 		t.Fatalf("Failed to store record: %v", err)
 	}
@@ -239,7 +240,7 @@ func TestListRecords(t *testing.T) {
 	// テストの実行
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := store.ListRecords(project, tc.from, tc.to)
+			result, err := store.ListRecords(context.Background(), project, tc.from, tc.to)
 			if err != nil {
 				t.Fatalf("Failed to list records: %v", err)
 			}
@@ -297,13 +298,13 @@ func TestGetProjectInfo(t *testing.T) {
 			t.Fatalf("Failed to create record: %v", err)
 		}
 
-		if err := store.CreateRecord(record); err != nil {
+		if err := store.CreateRecord(context.Background(), record); err != nil {
 			t.Fatalf("Failed to store record: %v", err)
 		}
 	}
 
 	// プロジェクト情報を取得
-	info, err := store.GetProjectInfo(project)
+	info, err := store.GetProjectInfo(context.Background(), project)
 	if err != nil {
 		t.Fatalf("Failed to get project info: %v", err)
 	}
@@ -332,7 +333,7 @@ func TestGetProjectInfo(t *testing.T) {
 	}
 
 	// 存在しないプロジェクト
-	_, err = store.GetProjectInfo("non-existent-project")
+	_, err = store.GetProjectInfo(context.Background(), "non-existent-project")
 	if err != sql.ErrNoRows {
 		t.Errorf("Expected sql.ErrNoRows for non-existent project, got %v", err)
 	}
@@ -360,7 +361,7 @@ func TestDeleteProject(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
-		if err := store.CreateRecord(record); err != nil {
+		if err := store.CreateRecord(context.Background(), record); err != nil {
 			t.Fatalf("Failed to store record: %v", err)
 		}
 	}
@@ -371,13 +372,13 @@ func TestDeleteProject(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
-		if err := store.CreateRecord(record); err != nil {
+		if err := store.CreateRecord(context.Background(), record); err != nil {
 			t.Fatalf("Failed to store record: %v", err)
 		}
 	}
 
 	// プロジェクト1のレコード数を確認
-	project1Info, err := store.GetProjectInfo(project1)
+	project1Info, err := store.GetProjectInfo(context.Background(), project1)
 	if err != nil {
 		t.Fatalf("Failed to get project info: %v", err)
 	}
@@ -386,19 +387,19 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1を削除
-	err = store.DeleteProject(project1)
+	err = store.DeleteProject(context.Background(), project1)
 	if err != nil {
 		t.Fatalf("Failed to delete project: %v", err)
 	}
 
 	// プロジェクト1が存在しなくなっていることを確認
-	_, err = store.GetProjectInfo(project1)
+	_, err = store.GetProjectInfo(context.Background(), project1)
 	if err != sql.ErrNoRows {
 		t.Errorf("Expected sql.ErrNoRows after deleting project1, got %v", err)
 	}
 
 	// プロジェクト2のレコードが残っていることを確認
-	project2Info, err := store.GetProjectInfo(project2)
+	project2Info, err := store.GetProjectInfo(context.Background(), project2)
 	if err != nil {
 		t.Fatalf("Failed to get project2 info: %v", err)
 	}
@@ -407,7 +408,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// 存在しないプロジェクトを削除しても問題ないことを確認
-	err = store.DeleteProject("non-existent-project")
+	err = store.DeleteProject(context.Background(), "non-existent-project")
 	if err != nil {
 		t.Errorf("Expected no error when deleting non-existent project, got %v", err)
 	}
