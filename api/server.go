@@ -2,12 +2,16 @@
 package api
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
+	"text/template"
 	"time"
 
 	"github.com/google/uuid"
@@ -85,6 +89,9 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// テンプレートクエリパラメータを取得
+	templateParam := r.URL.Query().Get("template")
+
 	// リクエストボディからデータを読み込み
 	var reqBody struct {
 		DoneAt string `json:"done_at"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
@@ -93,9 +100,24 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 
 	// リクエストボディが存在する場合はデコード
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
+		if templateParam != "" {
+			// テンプレートパラメータが指定されている場合、元のボディを変換
+			transformedBody, err := s.transformRequestBody(r.Body, templateParam)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Template transformation failed: %v", err), http.StatusBadRequest)
+				return
+			}
+			// 変換されたボディをデコード
+			if err := json.NewDecoder(strings.NewReader(transformedBody)).Decode(&reqBody); err != nil {
+				http.Error(w, "Invalid request body after template transformation", http.StatusBadRequest)
+				return
+			}
+		} else {
+			// 通常の処理
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
 		}
 	}
 
@@ -580,6 +602,35 @@ func parseInt(s string) (int, error) {
 		return 0, err
 	}
 	return value, nil
+}
+
+// transformRequestBody はGoテンプレートを使用してリクエストボディを変換します。
+func (s *Server) transformRequestBody(body io.Reader, templateStr string) (string, error) {
+	// リクエストボディを読み取り
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read request body: %w", err)
+	}
+
+	// 元のJSONをmapとしてパース
+	var originalData map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &originalData); err != nil {
+		return "", fmt.Errorf("failed to parse original JSON: %w", err)
+	}
+
+	// Goテンプレートをパース
+	tmpl, err := template.New("transform").Parse(templateStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	// テンプレートを実行してデータを変換
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, originalData); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.String(), nil
 }
 
 // Run はサーバーを指定されたアドレスで起動します。
