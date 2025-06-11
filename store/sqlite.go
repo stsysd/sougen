@@ -19,19 +19,19 @@ import (
 // RecordStore はレコードの保存と取得を行うインターフェースです。
 type RecordStore interface {
 	// CreateRecord は新しいレコードを作成します。
-	CreateRecord(record *model.Record) error
+	CreateRecord(ctx context.Context, record *model.Record) error
 	// GetRecord は指定されたIDのレコードを取得します。
-	GetRecord(id uuid.UUID) (*model.Record, error)
+	GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error)
 	// DeleteRecord は指定されたIDのレコードを削除します。
-	DeleteRecord(id uuid.UUID) error
+	DeleteRecord(ctx context.Context, id uuid.UUID) error
 	// DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
-	DeleteProject(projectName string) error
+	DeleteProject(ctx context.Context, projectName string) error
 	// DeleteRecordsUntil は指定日時より前のレコードを削除します。
-	DeleteRecordsUntil(project string, until time.Time) (int, error)
+	DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error)
 	// ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
-	ListRecords(project string, from, to time.Time) ([]*model.Record, error)
+	ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error)
 	// GetProjectInfo は指定されたプロジェクトの情報を取得します。
-	GetProjectInfo(projectName string) (*model.ProjectInfo, error)
+	GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error)
 	// Close はストアの接続を閉じます。
 	Close() error
 }
@@ -88,7 +88,7 @@ func initTables(conn *sql.DB) error {
 }
 
 // CreateRecord は新しいレコードをデータベースに保存します。
-func (s *SQLiteStore) CreateRecord(record *model.Record) error {
+func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) error {
 	// バリデーション
 	if err := record.Validate(); err != nil {
 		return err
@@ -98,7 +98,7 @@ func (s *SQLiteStore) CreateRecord(record *model.Record) error {
 	formattedTime := record.DoneAt.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
-	return s.queries.CreateRecord(context.Background(), db.CreateRecordParams{
+	return s.queries.CreateRecord(ctx, db.CreateRecordParams{
 		ID:      record.ID.String(),
 		Project: record.Project,
 		Value:   int64(record.Value),
@@ -107,9 +107,9 @@ func (s *SQLiteStore) CreateRecord(record *model.Record) error {
 }
 
 // GetRecord は指定されたIDのレコードを取得します。
-func (s *SQLiteStore) GetRecord(id uuid.UUID) (*model.Record, error) {
+func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error) {
 	// sqlcで生成されたクエリを使用
-	dbRecord, err := s.queries.GetRecord(context.Background(), id.String())
+	dbRecord, err := s.queries.GetRecord(ctx, id.String())
 	if err == sql.ErrNoRows {
 		return nil, errors.New("record not found")
 	}
@@ -134,7 +134,7 @@ func (s *SQLiteStore) GetRecord(id uuid.UUID) (*model.Record, error) {
 }
 
 // ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
-func (s *SQLiteStore) ListRecords(project string, from, to time.Time) ([]*model.Record, error) {
+func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error) {
 	// 日付の範囲を丸一日に設定（秒以下の精度を取り除く）
 	// fromは日付の始まりに設定
 	fromDate := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
@@ -145,7 +145,7 @@ func (s *SQLiteStore) ListRecords(project string, from, to time.Time) ([]*model.
 	toStr := toDate.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
-	dbRecords, err := s.queries.ListRecords(context.Background(), db.ListRecordsParams{
+	dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
 		DoneAt:   fromStr,
 		DoneAt_2: toStr,
 		Project:  project,
@@ -186,9 +186,9 @@ func (s *SQLiteStore) Close() error {
 }
 
 // DeleteRecord は指定されたIDのレコードを削除します。
-func (s *SQLiteStore) DeleteRecord(id uuid.UUID) error {
+func (s *SQLiteStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
 	// sqlcで生成されたクエリを使用
-	result, err := s.queries.DeleteRecord(context.Background(), id.String())
+	result, err := s.queries.DeleteRecord(ctx, id.String())
 	if err != nil {
 		return err
 	}
@@ -208,9 +208,9 @@ func (s *SQLiteStore) DeleteRecord(id uuid.UUID) error {
 }
 
 // GetProjectInfo は指定されたプロジェクトの情報を取得します。
-func (s *SQLiteStore) GetProjectInfo(projectName string) (*model.ProjectInfo, error) {
+func (s *SQLiteStore) GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error) {
 	// sqlcで生成されたクエリを使用
-	projectInfo, err := s.queries.GetProjectInfo(context.Background(), projectName)
+	projectInfo, err := s.queries.GetProjectInfo(ctx, projectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query project info: %w", err)
 	}
@@ -254,7 +254,7 @@ func (s *SQLiteStore) GetProjectInfo(projectName string) (*model.ProjectInfo, er
 }
 
 // DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
-func (s *SQLiteStore) DeleteProject(projectName string) error {
+func (s *SQLiteStore) DeleteProject(ctx context.Context, projectName string) error {
 	// トランザクションの開始
 	tx, err := s.conn.Begin()
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *SQLiteStore) DeleteProject(projectName string) error {
 }
 
 // DeleteRecordsUntil は指定日時より前のレコードを削除します。
-func (s *SQLiteStore) DeleteRecordsUntil(project string, until time.Time) (int, error) {
+func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error) {
 	// トランザクションの開始
 	tx, err := s.conn.Begin()
 	if err != nil {
@@ -307,10 +307,10 @@ func (s *SQLiteStore) DeleteRecordsUntil(project string, until time.Time) (int, 
 	var result sql.Result
 	if project == "" {
 		// 特定のプロジェクト指定がない場合は全プロジェクトから削除
-		result, err = queriesWithTx.DeleteRecordsUntil(context.Background(), untilStr)
+		result, err = queriesWithTx.DeleteRecordsUntil(ctx, untilStr)
 	} else {
 		// 特定プロジェクトのレコードを削除
-		result, err = queriesWithTx.DeleteRecordsUntilByProject(context.Background(), db.DeleteRecordsUntilByProjectParams{
+		result, err = queriesWithTx.DeleteRecordsUntilByProject(ctx, db.DeleteRecordsUntilByProjectParams{
 			Project: project,
 			DoneAt:  untilStr,
 		})

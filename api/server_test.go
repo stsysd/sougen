@@ -3,6 +3,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -41,7 +42,7 @@ func NewMockRecordStore() *MockRecordStore {
 	}
 }
 
-func (m *MockRecordStore) CreateRecord(record *model.Record) error {
+func (m *MockRecordStore) CreateRecord(ctx context.Context, record *model.Record) error {
 	if err := record.Validate(); err != nil {
 		return err
 	}
@@ -49,7 +50,7 @@ func (m *MockRecordStore) CreateRecord(record *model.Record) error {
 	return nil
 }
 
-func (m *MockRecordStore) GetRecord(id uuid.UUID) (*model.Record, error) {
+func (m *MockRecordStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error) {
 	record, exists := m.records[id.String()]
 	if !exists {
 		return nil, fmt.Errorf("record not found")
@@ -57,7 +58,7 @@ func (m *MockRecordStore) GetRecord(id uuid.UUID) (*model.Record, error) {
 	return record, nil
 }
 
-func (m *MockRecordStore) DeleteRecord(id uuid.UUID) error {
+func (m *MockRecordStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
 	_, exists := m.records[id.String()]
 	if !exists {
 		return fmt.Errorf("record not found")
@@ -66,7 +67,7 @@ func (m *MockRecordStore) DeleteRecord(id uuid.UUID) error {
 	return nil
 }
 
-func (m *MockRecordStore) ListRecords(project string, from, to time.Time) ([]*model.Record, error) {
+func (m *MockRecordStore) ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error) {
 	var records []*model.Record
 
 	for _, r := range m.records {
@@ -87,7 +88,7 @@ func (m *MockRecordStore) Close() error {
 	return nil
 }
 
-func (m *MockRecordStore) DeleteProject(projectName string) error {
+func (m *MockRecordStore) DeleteProject(ctx context.Context, projectName string) error {
 	// 指定されたプロジェクトのレコードをすべて削除
 	for id, record := range m.records {
 		if record.Project == projectName {
@@ -98,7 +99,7 @@ func (m *MockRecordStore) DeleteProject(projectName string) error {
 	return nil
 }
 
-func (m *MockRecordStore) DeleteRecordsUntil(project string, until time.Time) (int, error) {
+func (m *MockRecordStore) DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error) {
 	count := 0
 	// 条件に一致するレコードをIDリストに収集
 	var idsToDelete []string
@@ -119,7 +120,7 @@ func (m *MockRecordStore) DeleteRecordsUntil(project string, until time.Time) (i
 	return count, nil
 }
 
-func (m *MockRecordStore) GetProjectInfo(projectName string) (*model.ProjectInfo, error) {
+func (m *MockRecordStore) GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error) {
 	var recordCount int
 	var totalValue int
 	var firstRecordAt, lastRecordAt time.Time
@@ -426,7 +427,7 @@ func TestGetRecordEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
-	mockStore.CreateRecord(testRecord)
+	mockStore.CreateRecord(context.Background(), testRecord)
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -512,7 +513,7 @@ func TestGetRecordFromWrongProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
-	mockStore.CreateRecord(testRecord)
+	mockStore.CreateRecord(context.Background(), testRecord)
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -545,7 +546,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
-	mockStore.CreateRecord(testRecord)
+	mockStore.CreateRecord(context.Background(), testRecord)
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -565,7 +566,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	}
 
 	// レコードが実際に削除されたことを確認
-	_, err = mockStore.GetRecord(testRecord.ID)
+	_, err = mockStore.GetRecord(context.Background(), testRecord.ID)
 	if err == nil {
 		t.Error("Record should have been deleted, but it still exists")
 	}
@@ -610,7 +611,7 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
-	mockStore.CreateRecord(testRecord)
+	mockStore.CreateRecord(context.Background(), testRecord)
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -630,7 +631,7 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 	}
 
 	// レコードがまだ存在することを確認
-	_, err = mockStore.GetRecord(testRecord.ID)
+	_, err = mockStore.GetRecord(context.Background(), testRecord.ID)
 	if err != nil {
 		t.Errorf("Record should still exist, but got error: %v", err)
 	}
@@ -646,22 +647,22 @@ func TestGetGraphEndpoint(t *testing.T) {
 	// テスト用のレコードを作成 - 同じ日付で複数レコード
 	doneAt1 := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
 	record1, _ := model.NewRecord(doneAt1, projectName, 3)
-	mockStore.CreateRecord(record1)
+	mockStore.CreateRecord(context.Background(), record1)
 
 	// 同じ日の別の時間のレコード
 	doneAt2 := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
 	record2, _ := model.NewRecord(doneAt2, projectName, 2)
-	mockStore.CreateRecord(record2)
+	mockStore.CreateRecord(context.Background(), record2)
 
 	// 別の日のレコード
 	doneAt3 := time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC)
 	record3, _ := model.NewRecord(doneAt3, projectName, 1)
-	mockStore.CreateRecord(record3)
+	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別プロジェクトのレコード (グラフに含まれないはず)
 	doneAt4 := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
 	record4, _ := model.NewRecord(doneAt4, "another_project", 5)
-	mockStore.CreateRecord(record4)
+	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -770,20 +771,20 @@ func TestListRecordsEndpoint(t *testing.T) {
 	// テスト用のレコードを複数作成
 	doneAt1 := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
 	record1, _ := model.NewRecord(doneAt1, projectName, 1)
-	mockStore.CreateRecord(record1)
+	mockStore.CreateRecord(context.Background(), record1)
 
 	doneAt2 := time.Date(2025, 5, 21, 12, 0, 0, 0, time.UTC)
 	record2, _ := model.NewRecord(doneAt2, projectName, 2)
-	mockStore.CreateRecord(record2)
+	mockStore.CreateRecord(context.Background(), record2)
 
 	doneAt3 := time.Date(2025, 5, 22, 14, 0, 0, 0, time.UTC)
 	record3, _ := model.NewRecord(doneAt3, projectName, 3)
-	mockStore.CreateRecord(record3)
+	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別のプロジェクトのレコード（取得されないはず）
 	doneAt4 := time.Date(2025, 5, 23, 16, 0, 0, 0, time.UTC)
 	record4, _ := model.NewRecord(doneAt4, "another-project", 4)
-	mockStore.CreateRecord(record4)
+	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -861,7 +862,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		recordTime := baseTime.Add(time.Duration(i) * time.Hour)
 		record, _ := model.NewRecord(recordTime, projectName, i+1)
-		mockStore.CreateRecord(record)
+		mockStore.CreateRecord(context.Background(), record)
 		allRecords = append(allRecords, record)
 	}
 
@@ -1067,13 +1068,13 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクトが削除されたことを確認
-	_, err = store.GetProjectInfo("test")
+	_, err = store.GetProjectInfo(context.Background(), "test")
 	if err == nil {
 		t.Errorf("Project should have been deleted, but still exists")
 	}
 
 	// 他のプロジェクトのレコードが削除されていないことを確認
-	_, err = store.GetRecord(rec3.ID)
+	_, err = store.GetRecord(context.Background(), rec3.ID)
 	if err != nil {
 		t.Errorf("Record from other project should not be deleted")
 	}
@@ -1111,7 +1112,7 @@ func TestHandleGetGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
-	mockStore.CreateRecord(record1)
+	mockStore.CreateRecord(context.Background(), record1)
 
 	// リクエストの作成
 	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph", nil)
@@ -1314,14 +1315,14 @@ func TestBulkDeleteRecords(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
 				record, _ := model.NewRecord(recordTime, project1, i+1)
-				mockStore.CreateRecord(record)
+				mockStore.CreateRecord(context.Background(), record)
 			}
 
 			// project2のレコードを作成（3件）
 			for i := 0; i < 3; i++ {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
 				record, _ := model.NewRecord(recordTime, project2, i+10)
-				mockStore.CreateRecord(record)
+				mockStore.CreateRecord(context.Background(), record)
 			}
 
 			// 各テストケースごとに新しいサーバーも作成

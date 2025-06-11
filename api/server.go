@@ -135,7 +135,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードの保存
-	if err := s.store.CreateRecord(record); err != nil {
+	if err := s.store.CreateRecord(r.Context(), record); err != nil {
 		log.Printf("Error creating record: %v", err)
 		http.Error(w, "Failed to create record", http.StatusInternalServerError)
 		return
@@ -173,7 +173,7 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードの取得
-	record, err := s.store.GetRecord(id)
+	record, err := s.store.GetRecord(r.Context(), id)
 	if err != nil {
 		if err.Error() == "record not found" {
 			http.Error(w, "Record not found", http.StatusNotFound)
@@ -221,7 +221,7 @@ func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 削除前にレコードが存在するかつ指定プロジェクトのものかを確認
-	record, err := s.store.GetRecord(id)
+	record, err := s.store.GetRecord(r.Context(), id)
 	if err != nil {
 		if err.Error() == "record not found" {
 			http.Error(w, "Record not found", http.StatusNotFound)
@@ -239,7 +239,7 @@ func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードの削除
-	if err := s.store.DeleteRecord(id); err != nil {
+	if err := s.store.DeleteRecord(r.Context(), id); err != nil {
 		log.Printf("Error deleting record: %v", err)
 		http.Error(w, "Failed to delete record", http.StatusInternalServerError)
 		return
@@ -270,7 +270,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 			// エラーが発生してもグラフ表示は続行するため、エラーレスポンスは返さない
 		} else {
 			// レコードの保存
-			if err := s.store.CreateRecord(record); err != nil {
+			if err := s.store.CreateRecord(r.Context(), record); err != nil {
 				log.Printf("Error saving access counter record: %v", err)
 				// エラーが発生してもグラフ表示は続行
 			}
@@ -310,7 +310,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードの取得
-	records, err := s.store.ListRecords(projectName, fromTime, toTime)
+	records, err := s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
 		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
@@ -404,7 +404,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードの取得（RecordStoreの実装により既にdone_at順にソート済み）
-	records, err := s.store.ListRecords(projectName, fromTime, toTime)
+	records, err := s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
 		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
@@ -480,7 +480,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// プロジェクト情報の取得
-	projectInfo, err := s.store.GetProjectInfo(projectName)
+	projectInfo, err := s.store.GetProjectInfo(r.Context(), projectName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, fmt.Sprintf("Project '%s' not found", projectName), http.StatusNotFound)
@@ -511,7 +511,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// プロジェクト削除の実行
-	err := s.store.DeleteProject(projectName)
+	err := s.store.DeleteProject(r.Context(), projectName)
 	if err != nil {
 		log.Printf("Error deleting project: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -553,7 +553,7 @@ func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request)
 	}
 
 	// レコードの一括削除を実行
-	count, err := s.store.DeleteRecordsUntil(project, untilTime)
+	count, err := s.store.DeleteRecordsUntil(r.Context(), project, untilTime)
 	if err != nil {
 		log.Printf("Error deleting records until specified date: %v", err)
 		http.Error(w, "Failed to delete records", http.StatusInternalServerError)
