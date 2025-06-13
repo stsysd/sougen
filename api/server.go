@@ -57,7 +57,7 @@ func (s *Server) routes() {
 	securedHandler.HandleFunc("DELETE /v0/r", s.handleBulkDeleteRecords)
 
 	// 認証ミドルウェアを適用し、メインルータにマウント
-	s.router.Handle("/*", s.authMiddleware(securedHandler))
+	s.router.Handle("/", s.authMiddleware(securedHandler))
 
 	// Graph endpoints - support both with and without .svg extension
 	s.router.HandleFunc("GET /v0/p/{project_name}/graph.svg", s.handleGetGraph)
