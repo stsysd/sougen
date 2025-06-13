@@ -5,8 +5,8 @@
 package db
 
 type Record struct {
-	ID      string `db:"id" json:"id"`
-	Project string `db:"project" json:"project"`
-	Value   int64  `db:"value" json:"value"`
-	DoneAt  string `db:"done_at" json:"done_at"`
+	ID        string `db:"id" json:"id"`
+	Project   string `db:"project" json:"project"`
+	Value     int64  `db:"value" json:"value"`
+	Timestamp string `db:"timestamp" json:"timestamp"`
 }

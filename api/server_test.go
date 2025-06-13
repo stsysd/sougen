@@ -71,14 +71,14 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, project string, from,
 	var records []*model.Record
 
 	for _, r := range m.records {
-		if r.Project == project && !r.DoneAt.Before(from) && !r.DoneAt.After(to) {
+		if r.Project == project && !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
 			records = append(records, r)
 		}
 	}
 
-	// DoneAtの昇順にソート（SQLiteの実装と同様に）
+	// Timestampの昇順にソート（SQLiteの実装と同様に）
 	sort.Slice(records, func(i, j int) bool {
-		return records[i].DoneAt.Before(records[j].DoneAt)
+		return records[i].Timestamp.Before(records[j].Timestamp)
 	})
 
 	return records, nil
@@ -106,7 +106,7 @@ func (m *MockRecordStore) DeleteRecordsUntil(ctx context.Context, project string
 
 	for id, record := range m.records {
 		// プロジェクト指定がない、または一致するプロジェクトかつ指定日時より前
-		if (project == "" || record.Project == project) && record.DoneAt.Before(until) {
+		if (project == "" || record.Project == project) && record.Timestamp.Before(until) {
 			idsToDelete = append(idsToDelete, id)
 		}
 	}
@@ -133,16 +133,16 @@ func (m *MockRecordStore) GetProjectInfo(ctx context.Context, projectName string
 		if r.Project == projectName {
 			if !hasRecords {
 				// 1件目のレコード
-				firstRecordAt = r.DoneAt
-				lastRecordAt = r.DoneAt
+				firstRecordAt = r.Timestamp
+				lastRecordAt = r.Timestamp
 				hasRecords = true
 			} else {
 				// 日時の比較
-				if r.DoneAt.Before(firstRecordAt) {
-					firstRecordAt = r.DoneAt
+				if r.Timestamp.Before(firstRecordAt) {
+					firstRecordAt = r.Timestamp
 				}
-				if r.DoneAt.After(lastRecordAt) {
-					lastRecordAt = r.DoneAt
+				if r.Timestamp.After(lastRecordAt) {
+					lastRecordAt = r.Timestamp
 				}
 			}
 
@@ -176,8 +176,8 @@ func TestCreateRecordEndpoint(t *testing.T) {
 
 	// テストリクエストデータ
 	reqBody := map[string]interface{}{
-		"done_at": "2025-05-21T14:30:00Z",
-		"value":   1,
+		"timestamp": "2025-05-21T14:30:00Z",
+		"value":     1,
 	}
 	reqBytes, _ := json.Marshal(reqBody)
 
@@ -208,11 +208,11 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	t.Logf("Response record: %+v", responseRecord)
 	t.Logf("Request body: %+v", reqBody)
 
-	// DoneAt は日時型なので、フォーマット文字列を使った比較が必要
-	expectedDoneAt := reqBody["done_at"].(string)
-	doneAtStr := responseRecord.DoneAt.Format(time.RFC3339)
-	if doneAtStr != expectedDoneAt {
-		t.Errorf("Expected DoneAt %s, got %s", expectedDoneAt, doneAtStr)
+	// Timestamp は日時型なので、フォーマット文字列を使った比較が必要
+	expectedTimestamp := reqBody["timestamp"].(string)
+	timestampStr := responseRecord.Timestamp.Format(time.RFC3339)
+	if timestampStr != expectedTimestamp {
+		t.Errorf("Expected Timestamp %s, got %s", expectedTimestamp, timestampStr)
 	}
 
 	// プロジェクト名の確認
@@ -229,8 +229,8 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	}
 }
 
-func TestCreateRecordWithoutDoneAt(t *testing.T) {
-	// done_atフィールドが省略された場合に現在時刻が自動設定されることをテスト
+func TestCreateRecordWithoutTimestamp(t *testing.T) {
+	// timestampフィールドが省略された場合に現在時刻が自動設定されることをテスト
 
 	// モックストアの準備
 	mockStore := NewMockRecordStore()
@@ -239,10 +239,10 @@ func TestCreateRecordWithoutDoneAt(t *testing.T) {
 	// プロジェクト名
 	projectName := "exercise"
 
-	// done_atを省略したテストリクエストデータ
+	// timestampを省略したテストリクエストデータ
 	reqBody := map[string]interface{}{
 		"value": 1,
-		// done_atは意図的に省略
+		// timestampは意図的に省略
 	}
 	reqBytes, _ := json.Marshal(reqBody)
 
@@ -276,13 +276,13 @@ func TestCreateRecordWithoutDoneAt(t *testing.T) {
 		t.Fatalf("Failed to decode response body: %v", err)
 	}
 
-	// doneAtが現在時刻付近であることを確認（省略時に現在時刻が設定される）
-	if responseRecord.DoneAt.Before(beforeTime) || responseRecord.DoneAt.After(afterTime) {
-		t.Errorf("Expected DoneAt to be between %v and %v, got %v",
-			beforeTime, afterTime, responseRecord.DoneAt)
+	// timestampが現在時刻付近であることを確認（省略時に現在時刻が設定される）
+	if responseRecord.Timestamp.Before(beforeTime) || responseRecord.Timestamp.After(afterTime) {
+		t.Errorf("Expected Timestamp to be between %v and %v, got %v",
+			beforeTime, afterTime, responseRecord.Timestamp)
 	}
 
-	t.Logf("自動設定されたDoneAt: %v", responseRecord.DoneAt)
+	t.Logf("自動設定されたTimestamp: %v", responseRecord.Timestamp)
 
 	// プロジェクト名の確認
 	if responseRecord.Project != projectName {
@@ -308,7 +308,7 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 
 	// valueを省略したテストリクエストデータ
 	reqBody := map[string]interface{}{
-		"done_at": "2025-05-21T14:30:00Z",
+		"timestamp": "2025-05-21T14:30:00Z",
 		// valueは意図的に省略
 	}
 	reqBytes, _ := json.Marshal(reqBody)
@@ -337,11 +337,11 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 		t.Fatalf("Failed to decode response body: %v", err)
 	}
 
-	// DoneAt の確認
-	expectedDoneAt := reqBody["done_at"].(string)
-	doneAtStr := responseRecord.DoneAt.Format(time.RFC3339)
-	if doneAtStr != expectedDoneAt {
-		t.Errorf("Expected DoneAt %s, got %s", expectedDoneAt, doneAtStr)
+	// Timestamp の確認
+	expectedTimestamp := reqBody["timestamp"].(string)
+	timestampStr := responseRecord.Timestamp.Format(time.RFC3339)
+	if timestampStr != expectedTimestamp {
+		t.Errorf("Expected Timestamp %s, got %s", expectedTimestamp, timestampStr)
 	}
 
 	// プロジェクト名の確認
@@ -396,10 +396,10 @@ func TestCreateRecordWithEmptyBody(t *testing.T) {
 		t.Fatalf("Failed to decode response body: %v", err)
 	}
 
-	// doneAtが現在時刻付近であることを確認（空リクエストの場合も現在時刻が設定される）
-	if responseRecord.DoneAt.Before(beforeTime) || responseRecord.DoneAt.After(afterTime) {
-		t.Errorf("Expected DoneAt to be between %v and %v, got %v",
-			beforeTime, afterTime, responseRecord.DoneAt)
+	// timestampが現在時刻付近であることを確認（空リクエストの場合も現在時刻が設定される）
+	if responseRecord.Timestamp.Before(beforeTime) || responseRecord.Timestamp.After(afterTime) {
+		t.Errorf("Expected Timestamp to be between %v and %v, got %v",
+			beforeTime, afterTime, responseRecord.Timestamp)
 	}
 
 	// プロジェクト名の確認
@@ -422,8 +422,8 @@ func TestGetRecordEndpoint(t *testing.T) {
 	projectName := "exercise"
 
 	// テスト用のレコードを作成
-	doneAt := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(doneAt, projectName, 1)
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+	testRecord, err := model.NewRecord(timestamp, projectName, 1)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -460,8 +460,8 @@ func TestGetRecordEndpoint(t *testing.T) {
 		t.Errorf("Expected ID %s, got %s", testRecord.ID, responseRecord.ID)
 	}
 
-	if !responseRecord.DoneAt.Equal(testRecord.DoneAt) {
-		t.Errorf("Expected DoneAt %v, got %v", testRecord.DoneAt, responseRecord.DoneAt)
+	if !responseRecord.Timestamp.Equal(testRecord.Timestamp) {
+		t.Errorf("Expected Timestamp %v, got %v", testRecord.Timestamp, responseRecord.Timestamp)
 	}
 
 	if responseRecord.Project != testRecord.Project {
@@ -508,8 +508,8 @@ func TestGetRecordFromWrongProject(t *testing.T) {
 	wrongProject := "diet"
 
 	// テスト用のレコードを作成
-	doneAt := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(doneAt, correctProject, 1)
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+	testRecord, err := model.NewRecord(timestamp, correctProject, 1)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -541,8 +541,8 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	projectName := "exercise"
 
 	// テスト用のレコードを作成
-	doneAt := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(doneAt, projectName, 1)
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+	testRecord, err := model.NewRecord(timestamp, projectName, 1)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -606,8 +606,8 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 	wrongProject := "diet"
 
 	// テスト用のレコードを作成
-	doneAt := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(doneAt, correctProject, 1)
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+	testRecord, err := model.NewRecord(timestamp, correctProject, 1)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -645,23 +645,23 @@ func TestGetGraphEndpoint(t *testing.T) {
 	projectName := "exercise"
 
 	// テスト用のレコードを作成 - 同じ日付で複数レコード
-	doneAt1 := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(doneAt1, projectName, 3)
+	timestamp1 := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+	record1, _ := model.NewRecord(timestamp1, projectName, 3)
 	mockStore.CreateRecord(context.Background(), record1)
 
 	// 同じ日の別の時間のレコード
-	doneAt2 := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(doneAt2, projectName, 2)
+	timestamp2 := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+	record2, _ := model.NewRecord(timestamp2, projectName, 2)
 	mockStore.CreateRecord(context.Background(), record2)
 
 	// 別の日のレコード
-	doneAt3 := time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(doneAt3, projectName, 1)
+	timestamp3 := time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC)
+	record3, _ := model.NewRecord(timestamp3, projectName, 1)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別プロジェクトのレコード (グラフに含まれないはず)
-	doneAt4 := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(doneAt4, "another_project", 5)
+	timestamp4 := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
+	record4, _ := model.NewRecord(timestamp4, "another_project", 5)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -769,21 +769,21 @@ func TestListRecordsEndpoint(t *testing.T) {
 	projectName := "exercise"
 
 	// テスト用のレコードを複数作成
-	doneAt1 := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(doneAt1, projectName, 1)
+	timestamp1 := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+	record1, _ := model.NewRecord(timestamp1, projectName, 1)
 	mockStore.CreateRecord(context.Background(), record1)
 
-	doneAt2 := time.Date(2025, 5, 21, 12, 0, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(doneAt2, projectName, 2)
+	timestamp2 := time.Date(2025, 5, 21, 12, 0, 0, 0, time.UTC)
+	record2, _ := model.NewRecord(timestamp2, projectName, 2)
 	mockStore.CreateRecord(context.Background(), record2)
 
-	doneAt3 := time.Date(2025, 5, 22, 14, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(doneAt3, projectName, 3)
+	timestamp3 := time.Date(2025, 5, 22, 14, 0, 0, 0, time.UTC)
+	record3, _ := model.NewRecord(timestamp3, projectName, 3)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別のプロジェクトのレコード（取得されないはず）
-	doneAt4 := time.Date(2025, 5, 23, 16, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(doneAt4, "another-project", 4)
+	timestamp4 := time.Date(2025, 5, 23, 16, 0, 0, 0, time.UTC)
+	record4, _ := model.NewRecord(timestamp4, "another-project", 4)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -956,23 +956,23 @@ func TestGetProject(t *testing.T) {
 	store := NewMockRecordStore()
 
 	// テスト用データの作成
-	doneAt := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
+	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(doneAt, "test", 10)
+	rec1, err := model.NewRecord(timestamp, "test", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec1.ID.String()] = rec1
 
-	rec2, err := model.NewRecord(doneAt.Add(1*time.Hour), "test", 15)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec2.ID.String()] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(doneAt, "another", 20)
+	rec3, err := model.NewRecord(timestamp, "another", 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1032,23 +1032,23 @@ func TestDeleteProject(t *testing.T) {
 	store := NewMockRecordStore()
 
 	// テスト用のレコードを作成
-	doneAt := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
+	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(doneAt, "test", 10)
+	rec1, err := model.NewRecord(timestamp, "test", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec1.ID.String()] = rec1
 
-	rec2, err := model.NewRecord(doneAt.Add(1*time.Hour), "test", 15)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec2.ID.String()] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(doneAt, "another", 20)
+	rec3, err := model.NewRecord(timestamp, "another", 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1197,8 +1197,8 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	fiveMinutesAgo := now.Add(-5 * time.Minute)
 	fiveMinutesLater := now.Add(5 * time.Minute)
 
-	if foundRecord.DoneAt.Before(fiveMinutesAgo) || foundRecord.DoneAt.After(fiveMinutesLater) {
-		t.Errorf("Record timestamp is not within expected range: %v", foundRecord.DoneAt)
+	if foundRecord.Timestamp.Before(fiveMinutesAgo) || foundRecord.Timestamp.After(fiveMinutesLater) {
+		t.Errorf("Record timestamp is not within expected range: %v", foundRecord.Timestamp)
 	}
 }
 

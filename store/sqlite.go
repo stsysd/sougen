@@ -78,11 +78,11 @@ func initTables(conn *sql.DB) error {
 			id TEXT PRIMARY KEY,
 			project TEXT NOT NULL,
 			value INTEGER NOT NULL,
-			done_at TEXT NOT NULL
+			timestamp TEXT NOT NULL
 		);
 		
-		CREATE INDEX IF NOT EXISTS idx_records_project_done_at 
-		ON records(project, done_at);
+		CREATE INDEX IF NOT EXISTS idx_records_project_timestamp 
+		ON records(project, timestamp);
 	`)
 	return err
 }
@@ -95,14 +95,14 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 	}
 
 	// 日時をRFC3339形式に統一して保存
-	formattedTime := record.DoneAt.Format(time.RFC3339)
+	formattedTime := record.Timestamp.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
 	return s.queries.CreateRecord(ctx, db.CreateRecordParams{
 		ID:      record.ID.String(),
 		Project: record.Project,
 		Value:   int64(record.Value),
-		DoneAt:  formattedTime,
+		Timestamp:  formattedTime,
 	})
 }
 
@@ -118,7 +118,7 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 	}
 
 	// 文字列から時間に変換
-	doneAt, err := time.Parse(time.RFC3339, dbRecord.DoneAt)
+	timestamp, err := time.Parse(time.RFC3339, dbRecord.Timestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse record date: %w", err)
 	}
@@ -130,7 +130,7 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 	}
 
 	// レコードの作成
-	return model.LoadRecord(recordID, doneAt, dbRecord.Project, int(dbRecord.Value))
+	return model.LoadRecord(recordID, timestamp, dbRecord.Project, int(dbRecord.Value))
 }
 
 // ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
@@ -146,8 +146,8 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 
 	// sqlcで生成されたクエリを使用
 	dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
-		DoneAt:   fromStr,
-		DoneAt_2: toStr,
+		Timestamp:   fromStr,
+		Timestamp_2: toStr,
 		Project:  project,
 	})
 	if err != nil {
@@ -158,7 +158,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 	var records []*model.Record
 	for _, dbRecord := range dbRecords {
 		// 文字列から時間に変換
-		doneAt, err := time.Parse(time.RFC3339, dbRecord.DoneAt)
+		timestamp, err := time.Parse(time.RFC3339, dbRecord.Timestamp)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse record date: %w", err)
 		}
@@ -170,7 +170,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 		}
 
 		// レコードの作成
-		record, err := model.LoadRecord(id, doneAt, dbRecord.Project, int(dbRecord.Value))
+		record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value))
 		if err != nil {
 			return nil, err
 		}
@@ -312,7 +312,7 @@ func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, project string, un
 		// 特定プロジェクトのレコードを削除
 		result, err = queriesWithTx.DeleteRecordsUntilByProject(ctx, db.DeleteRecordsUntilByProjectParams{
 			Project: project,
-			DoneAt:  untilStr,
+			Timestamp:  untilStr,
 		})
 	}
 

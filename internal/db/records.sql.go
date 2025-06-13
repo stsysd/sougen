@@ -11,15 +11,15 @@ import (
 )
 
 const createRecord = `-- name: CreateRecord :exec
-INSERT INTO records (id, project, value, done_at)
+INSERT INTO records (id, project, value, timestamp)
 VALUES (?, ?, ?, ?)
 `
 
 type CreateRecordParams struct {
-	ID      string `db:"id" json:"id"`
-	Project string `db:"project" json:"project"`
-	Value   int64  `db:"value" json:"value"`
-	DoneAt  string `db:"done_at" json:"done_at"`
+	ID        string `db:"id" json:"id"`
+	Project   string `db:"project" json:"project"`
+	Value     int64  `db:"value" json:"value"`
+	Timestamp string `db:"timestamp" json:"timestamp"`
 }
 
 func (q *Queries) CreateRecord(ctx context.Context, arg CreateRecordParams) error {
@@ -27,7 +27,7 @@ func (q *Queries) CreateRecord(ctx context.Context, arg CreateRecordParams) erro
 		arg.ID,
 		arg.Project,
 		arg.Value,
-		arg.DoneAt,
+		arg.Timestamp,
 	)
 	return err
 }
@@ -50,32 +50,32 @@ func (q *Queries) DeleteRecord(ctx context.Context, id string) (sql.Result, erro
 }
 
 const deleteRecordsUntil = `-- name: DeleteRecordsUntil :execresult
-DELETE FROM records WHERE done_at < ?
+DELETE FROM records WHERE timestamp < ?
 `
 
-func (q *Queries) DeleteRecordsUntil(ctx context.Context, doneAt string) (sql.Result, error) {
-	return q.db.ExecContext(ctx, deleteRecordsUntil, doneAt)
+func (q *Queries) DeleteRecordsUntil(ctx context.Context, timestamp string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, deleteRecordsUntil, timestamp)
 }
 
 const deleteRecordsUntilByProject = `-- name: DeleteRecordsUntilByProject :execresult
-DELETE FROM records WHERE project = ? AND done_at < ?
+DELETE FROM records WHERE project = ? AND timestamp < ?
 `
 
 type DeleteRecordsUntilByProjectParams struct {
-	Project string `db:"project" json:"project"`
-	DoneAt  string `db:"done_at" json:"done_at"`
+	Project   string `db:"project" json:"project"`
+	Timestamp string `db:"timestamp" json:"timestamp"`
 }
 
 func (q *Queries) DeleteRecordsUntilByProject(ctx context.Context, arg DeleteRecordsUntilByProjectParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, deleteRecordsUntilByProject, arg.Project, arg.DoneAt)
+	return q.db.ExecContext(ctx, deleteRecordsUntilByProject, arg.Project, arg.Timestamp)
 }
 
 const getProjectInfo = `-- name: GetProjectInfo :one
 SELECT 
     COUNT(*) as record_count,
     COALESCE(SUM(value), 0) as total_value,
-    MIN(done_at) as first_record_at,
-    MAX(done_at) as last_record_at
+    MIN(timestamp) as first_record_at,
+    MAX(timestamp) as last_record_at
 FROM records
 WHERE project = ?
 `
@@ -100,7 +100,7 @@ func (q *Queries) GetProjectInfo(ctx context.Context, project string) (GetProjec
 }
 
 const getRecord = `-- name: GetRecord :one
-SELECT id, project, value, done_at
+SELECT id, project, value, timestamp
 FROM records
 WHERE id = ?
 `
@@ -112,26 +112,27 @@ func (q *Queries) GetRecord(ctx context.Context, id string) (Record, error) {
 		&i.ID,
 		&i.Project,
 		&i.Value,
-		&i.DoneAt,
+		&i.Timestamp,
 	)
 	return i, err
 }
 
 const listRecords = `-- name: ListRecords :many
-SELECT id, project, value, done_at
+SELECT id, project, value, timestamp
 FROM records
-WHERE done_at BETWEEN ? AND ? AND project = ?
-ORDER BY done_at
+WHERE timestamp BETWEEN ? AND ? AND project = ?
+ORDER BY timestamp
 `
 
 type ListRecordsParams struct {
-	DoneAt   string `db:"done_at" json:"done_at"`
-	DoneAt_2 string `db:"done_at_2" json:"done_at_2"`
-	Project  string `db:"project" json:"project"`
+	Timestamp   string `db:"timestamp" json:"timestamp"`
+	Timestamp_2 string `db:"timestamp_2" json:"timestamp_2"`
+	Project     string `db:"project" json:"project"`
 }
 
+// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Record, error) {
-	rows, err := q.db.QueryContext(ctx, listRecords, arg.DoneAt, arg.DoneAt_2, arg.Project)
+	rows, err := q.db.QueryContext(ctx, listRecords, arg.Timestamp, arg.Timestamp_2, arg.Project)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +144,7 @@ func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Rec
 			&i.ID,
 			&i.Project,
 			&i.Value,
-			&i.DoneAt,
+			&i.Timestamp,
 		); err != nil {
 			return nil, err
 		}

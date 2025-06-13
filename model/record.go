@@ -13,16 +13,16 @@ type Record struct {
 	ID      uuid.UUID `json:"id"`
 	Project string    `json:"project"` // アクティビティのカテゴリー
 	Value   int       `json:"value"`   // 記録値
-	DoneAt  time.Time `json:"done_at"` // アクティビティの日時
+	Timestamp  time.Time `json:"timestamp"` // アクティビティの日時
 }
 
 // NewRecord はRecordの新しいインスタンスを作成し、UUIDと作成時間を設定します。
-func NewRecord(doneAt time.Time, project string, value int) (*Record, error) {
+func NewRecord(timestamp time.Time, project string, value int) (*Record, error) {
 	rec := &Record{
 		ID:      uuid.New(),
 		Project: project,
 		Value:   value,
-		DoneAt:  doneAt,
+		Timestamp:  timestamp,
 	}
 	if err := rec.Validate(); err != nil {
 		return nil, err
@@ -31,12 +31,12 @@ func NewRecord(doneAt time.Time, project string, value int) (*Record, error) {
 }
 
 // LoadRecord はRecordの新しいインスタンスを作成し、UUIDと作成時間を設定します。
-func LoadRecord(id uuid.UUID, doneAt time.Time, project string, value int) (*Record, error) {
+func LoadRecord(id uuid.UUID, timestamp time.Time, project string, value int) (*Record, error) {
 	rec := &Record{
 		ID:      id,
 		Project: project,
 		Value:   value,
-		DoneAt:  doneAt,
+		Timestamp:  timestamp,
 	}
 	err := rec.Validate()
 	if err != nil {
@@ -53,8 +53,8 @@ func (r *Record) Validate() error {
 	}
 
 	// 日時の検証
-	if r.DoneAt.IsZero() {
-		return errors.New("done_at is required")
+	if r.Timestamp.IsZero() {
+		return errors.New("timestamp is required")
 	}
 
 	// カテゴリーの検証

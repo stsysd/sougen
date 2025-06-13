@@ -13,10 +13,11 @@ type Querier interface {
 	CreateRecord(ctx context.Context, arg CreateRecordParams) error
 	DeleteProject(ctx context.Context, project string) error
 	DeleteRecord(ctx context.Context, id string) (sql.Result, error)
-	DeleteRecordsUntil(ctx context.Context, doneAt string) (sql.Result, error)
+	DeleteRecordsUntil(ctx context.Context, timestamp string) (sql.Result, error)
 	DeleteRecordsUntilByProject(ctx context.Context, arg DeleteRecordsUntilByProjectParams) (sql.Result, error)
 	GetProjectInfo(ctx context.Context, project string) (GetProjectInfoRow, error)
 	GetRecord(ctx context.Context, id string) (Record, error)
+	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 	ListRecords(ctx context.Context, arg ListRecordsParams) ([]Record, error)
 }
 

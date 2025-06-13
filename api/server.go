@@ -94,7 +94,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 
 	// リクエストボディからデータを読み込み
 	var reqBody struct {
-		DoneAt string `json:"done_at"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
+    Timestamp string `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
 		Value  *int   `json:"value"`   // レコードの値, 省略可能
 	}
 
@@ -121,15 +121,15 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// doneAt の処理: 省略された場合は現在時刻を使用
-	var doneAt time.Time
-	if reqBody.DoneAt == "" {
-		// done_at が省略された場合は現在時刻を使用
-		doneAt = time.Now()
+	// timestmap の処理: 省略された場合は現在時刻を使用
+	var timestamp time.Time
+	if reqBody.Timestamp == "" {
+		// timestamp が省略された場合は現在時刻を使用
+		timestamp = time.Now()
 	} else {
 		// 文字列からtime.Timeに変換
 		var err error
-		doneAt, err = time.Parse(time.RFC3339, reqBody.DoneAt)
+		timestamp, err = time.Parse(time.RFC3339, reqBody.Timestamp)
 		if err != nil {
 			http.Error(w, "Invalid datetime format. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
 			return
@@ -149,7 +149,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 新しいレコードの作成
-	record, err := model.NewRecord(doneAt, projectName, *reqBody.Value)
+	record, err := model.NewRecord(timestamp, projectName, *reqBody.Value)
 	if err != nil {
 		log.Printf("Error creating record: %v", err)
 		http.Error(w, "Failed to create record", http.StatusBadRequest)
@@ -342,7 +342,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	// 日付ごとに集計
 	dateMap := make(map[string]int)
 	for _, record := range records {
-		dateString := record.DoneAt.Format("2006-01-02")
+		dateString := record.Timestamp.Format("2006-01-02")
 		dateMap[dateString] += record.Value
 	}
 
@@ -425,7 +425,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		toTime = defaultTo
 	}
 
-	// レコードの取得（RecordStoreの実装により既にdone_at順にソート済み）
+	// レコードの取得（RecordStoreの実装により既にtimestamp順にソート済み）
 	records, err := s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)

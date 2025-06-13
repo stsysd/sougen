@@ -30,29 +30,29 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 		requestBody    string
 		expectedStatus int
 		expectedValue  int
-		expectedDoneAt string
+		expectedTimestamp string
 	}{
 		{
 			name:     "GitHub webhook style template",
-			template: `{"done_at": "{{.pushed_at}}", "value": {{len .commits}}}`,
+			template: `{"timestamp": "{{.pushed_at}}", "value": {{len .commits}}}`,
 			requestBody: `{
 				"pushed_at": "2025-01-01T12:00:00Z",
 				"commits": [{"id":"1"}, {"id":"2"}, {"id":"3"}]
 			}`,
 			expectedStatus: http.StatusCreated,
 			expectedValue:  3,
-			expectedDoneAt: "2025-01-01T12:00:00Z",
+			expectedTimestamp: "2025-01-01T12:00:00Z",
 		},
 		{
 			name:     "Simple counter template",
-			template: `{"value": {{.count}}, "done_at": "{{.timestamp}}"}`,
+			template: `{"value": {{.count}}, "timestamp": "{{.timestamp}}"}`,
 			requestBody: `{
 				"count": 5,
 				"timestamp": "2025-02-01T15:30:00Z"
 			}`,
 			expectedStatus: http.StatusCreated,
 			expectedValue:  5,
-			expectedDoneAt: "2025-02-01T15:30:00Z",
+			expectedTimestamp: "2025-02-01T15:30:00Z",
 		},
 		{
 			name:     "Default value template",
@@ -65,7 +65,7 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 		},
 		{
 			name:     "Complex nested data template",
-			template: `{"done_at": "{{.event.timestamp}}", "value": {{.event.data.count}}}`,
+			template: `{"timestamp": "{{.event.timestamp}}", "value": {{.event.data.count}}}`,
 			requestBody: `{
 				"event": {
 					"timestamp": "2025-03-01T10:00:00Z",
@@ -76,7 +76,7 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 			}`,
 			expectedStatus: http.StatusCreated,
 			expectedValue:  7,
-			expectedDoneAt: "2025-03-01T10:00:00Z",
+			expectedTimestamp: "2025-03-01T10:00:00Z",
 		},
 	}
 
@@ -121,11 +121,11 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 					t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
 				}
 
-				// DoneAtの確認（指定されている場合）
-				if tc.expectedDoneAt != "" {
-					doneAtStr := responseRecord.DoneAt.Format(time.RFC3339)
-					if doneAtStr != tc.expectedDoneAt {
-						t.Errorf("Expected DoneAt %s, got %s", tc.expectedDoneAt, doneAtStr)
+				// Timestampの確認（指定されている場合）
+				if tc.expectedTimestamp != "" {
+					timestampStr := responseRecord.Timestamp.Format(time.RFC3339)
+					if timestampStr != tc.expectedTimestamp {
+						t.Errorf("Expected Timestamp %s, got %s", tc.expectedTimestamp, timestampStr)
 					}
 				}
 			}
@@ -249,10 +249,10 @@ func TestCreateRecordWithTemplateNoBody(t *testing.T) {
 		t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
 	}
 
-	// DoneAtが現在時刻付近であることを確認（テンプレートで指定されていないため現在時刻が設定される）
-	if responseRecord.DoneAt.Before(beforeTime) || responseRecord.DoneAt.After(afterTime) {
-		t.Errorf("Expected DoneAt to be between %v and %v, got %v",
-			beforeTime, afterTime, responseRecord.DoneAt)
+	// Timestampが現在時刻付近であることを確認（テンプレートで指定されていないため現在時刻が設定される）
+	if responseRecord.Timestamp.Before(beforeTime) || responseRecord.Timestamp.After(afterTime) {
+		t.Errorf("Expected Timestamp to be between %v and %v, got %v",
+			beforeTime, afterTime, responseRecord.Timestamp)
 	}
 }
 
@@ -276,9 +276,9 @@ func TestTransformRequestBody(t *testing.T) {
 		},
 		{
 			name:         "String field extraction",
-			template:     `{"done_at": "{{.timestamp}}"}`,
+			template:     `{"timestamp": "{{.timestamp}}"}`,
 			inputJSON:    `{"timestamp": "2025-01-01T12:00:00Z"}`,
-			expectedJSON: `{"done_at": "2025-01-01T12:00:00Z"}`,
+			expectedJSON: `{"timestamp": "2025-01-01T12:00:00Z"}`,
 			expectError:  false,
 		},
 		{

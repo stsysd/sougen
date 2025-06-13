@@ -9,12 +9,12 @@ import (
 
 func TestNewRecord(t *testing.T) {
 	// テストデータ
-	doneAt := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
 	project := "exercise"
 	value := 1
 
 	// レコードを生成
-	record, err := NewRecord(doneAt, project, value)
+	record, err := NewRecord(timestamp, project, value)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -25,8 +25,8 @@ func TestNewRecord(t *testing.T) {
 	}
 
 	// 各フィールドが正しく設定されていることを確認
-	if !record.DoneAt.Equal(doneAt) {
-		t.Errorf("Expected DoneAt to be %v, got %v", doneAt, record.DoneAt)
+	if !record.Timestamp.Equal(timestamp) {
+		t.Errorf("Expected Timestamp to be %v, got %v", timestamp, record.Timestamp)
 	}
 
 	if record.Project != project {

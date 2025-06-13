@@ -411,7 +411,7 @@ components:
         value:
           type: integer
           description: 記録値
-        done_at:
+        timestamp:
           type: string
           format: date-time
           description: アクティビティの日時
@@ -419,7 +419,7 @@ components:
         - id
         - project
         - value
-        - done_at
+        - timestamp
     
     RecordCreate:
       type: object
@@ -427,7 +427,7 @@ components:
         value:
           type: integer
           description: 記録値
-        done_at:
+        timestamp:
           type: string
           format: date-time
           description: アクティビティの日時（省略時は現在時刻）

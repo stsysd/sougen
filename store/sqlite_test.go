@@ -39,8 +39,8 @@ func TestCreateAndGetRecord(t *testing.T) {
 	defer cleanup()
 
 	// テストデータ
-	doneAt := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
-	record, err := model.NewRecord(doneAt, "exercise", 1)
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
+	record, err := model.NewRecord(timestamp, "exercise", 1)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -62,8 +62,8 @@ func TestCreateAndGetRecord(t *testing.T) {
 		t.Errorf("Expected ID %s, got %s", record.ID, retrievedRecord.ID)
 	}
 
-	if !retrievedRecord.DoneAt.Equal(record.DoneAt) {
-		t.Errorf("Expected DoneAt %v, got %v", record.DoneAt, retrievedRecord.DoneAt)
+	if !retrievedRecord.Timestamp.Equal(record.Timestamp) {
+		t.Errorf("Expected Timestamp %v, got %v", record.Timestamp, retrievedRecord.Timestamp)
 	}
 
 	if retrievedRecord.Project != record.Project {
@@ -114,8 +114,8 @@ func TestDeleteRecord(t *testing.T) {
 	defer cleanup()
 
 	// テストデータの作成
-	doneAt := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
-	record, err := model.NewRecord(doneAt, "exercise", 1)
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
+	record, err := model.NewRecord(timestamp, "exercise", 1)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -170,8 +170,8 @@ func TestListRecords(t *testing.T) {
 	// テスト用レコードを作成
 	for i := 0; i < 5; i++ {
 		// 1日ずつずらしたレコードを作成
-		doneAt := yesterday.AddDate(0, 0, i)
-		record, err := model.NewRecord(doneAt, project, i+1)
+		timestamp := yesterday.AddDate(0, 0, i)
+		record, err := model.NewRecord(timestamp, project, i+1)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
@@ -256,11 +256,11 @@ func TestListRecords(t *testing.T) {
 				}
 
 				// 取得したレコードの日付を年月日のみで比較
-				rYear, rMonth, rDay := r.DoneAt.Date()
+				rYear, rMonth, rDay := r.Timestamp.Date()
 				fromYear, fromMonth, fromDay := tc.from.Date()
 				toYear, toMonth, toDay := tc.to.Date()
 
-				rDate := time.Date(rYear, rMonth, rDay, 0, 0, 0, 0, r.DoneAt.Location())
+				rDate := time.Date(rYear, rMonth, rDay, 0, 0, 0, 0, r.Timestamp.Location())
 				fromDate := time.Date(fromYear, fromMonth, fromDay, 0, 0, 0, 0, tc.from.Location())
 				toDate := time.Date(toYear, toMonth, toDay, 0, 0, 0, 0, tc.to.Location())
 
@@ -285,15 +285,15 @@ func TestGetProjectInfo(t *testing.T) {
 	var firstDate, lastDate time.Time
 
 	for i, val := range values {
-		doneAt := startDate.AddDate(0, 0, i) // 1日ずつずらす
+		timestamp := startDate.AddDate(0, 0, i) // 1日ずつずらす
 		if i == 0 {
-			firstDate = doneAt
+			firstDate = timestamp
 		}
 		if i == len(values)-1 {
-			lastDate = doneAt
+			lastDate = timestamp
 		}
 
-		record, err := model.NewRecord(doneAt, project, val)
+		record, err := model.NewRecord(timestamp, project, val)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
