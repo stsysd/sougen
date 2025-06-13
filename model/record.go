@@ -14,15 +14,20 @@ type Record struct {
 	Project string    `json:"project"` // アクティビティのカテゴリー
 	Value   int       `json:"value"`   // 記録値
 	Timestamp  time.Time `json:"timestamp"` // アクティビティの日時
+	Tags    []string  `json:"tags"`     // タグ一覧
 }
 
 // NewRecord はRecordの新しいインスタンスを作成し、UUIDと作成時間を設定します。
-func NewRecord(timestamp time.Time, project string, value int) (*Record, error) {
+func NewRecord(timestamp time.Time, project string, value int, tags []string) (*Record, error) {
+	if tags == nil {
+		tags = []string{}
+	}
 	rec := &Record{
 		ID:      uuid.New(),
 		Project: project,
 		Value:   value,
 		Timestamp:  timestamp,
+		Tags:    tags,
 	}
 	if err := rec.Validate(); err != nil {
 		return nil, err
@@ -31,12 +36,16 @@ func NewRecord(timestamp time.Time, project string, value int) (*Record, error) 
 }
 
 // LoadRecord はRecordの新しいインスタンスを作成し、UUIDと作成時間を設定します。
-func LoadRecord(id uuid.UUID, timestamp time.Time, project string, value int) (*Record, error) {
+func LoadRecord(id uuid.UUID, timestamp time.Time, project string, value int, tags []string) (*Record, error) {
+	if tags == nil {
+		tags = []string{}
+	}
 	rec := &Record{
 		ID:      id,
 		Project: project,
 		Value:   value,
 		Timestamp:  timestamp,
+		Tags:    tags,
 	}
 	err := rec.Validate()
 	if err != nil {
