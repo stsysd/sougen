@@ -423,7 +423,7 @@ func TestGetRecordEndpoint(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, projectName, 1)
+	testRecord, err := model.NewRecord(timestamp, projectName, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -509,7 +509,7 @@ func TestGetRecordFromWrongProject(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, correctProject, 1)
+	testRecord, err := model.NewRecord(timestamp, correctProject, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -542,7 +542,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, projectName, 1)
+	testRecord, err := model.NewRecord(timestamp, projectName, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -607,7 +607,7 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, correctProject, 1)
+	testRecord, err := model.NewRecord(timestamp, correctProject, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -646,22 +646,22 @@ func TestGetGraphEndpoint(t *testing.T) {
 
 	// テスト用のレコードを作成 - 同じ日付で複数レコード
 	timestamp1 := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(timestamp1, projectName, 3)
+	record1, _ := model.NewRecord(timestamp1, projectName, 3, nil)
 	mockStore.CreateRecord(context.Background(), record1)
 
 	// 同じ日の別の時間のレコード
 	timestamp2 := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(timestamp2, projectName, 2)
+	record2, _ := model.NewRecord(timestamp2, projectName, 2, nil)
 	mockStore.CreateRecord(context.Background(), record2)
 
 	// 別の日のレコード
 	timestamp3 := time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(timestamp3, projectName, 1)
+	record3, _ := model.NewRecord(timestamp3, projectName, 1, nil)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別プロジェクトのレコード (グラフに含まれないはず)
 	timestamp4 := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, "another_project", 5)
+	record4, _ := model.NewRecord(timestamp4, "another_project", 5, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -770,20 +770,20 @@ func TestListRecordsEndpoint(t *testing.T) {
 
 	// テスト用のレコードを複数作成
 	timestamp1 := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(timestamp1, projectName, 1)
+	record1, _ := model.NewRecord(timestamp1, projectName, 1, nil)
 	mockStore.CreateRecord(context.Background(), record1)
 
 	timestamp2 := time.Date(2025, 5, 21, 12, 0, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(timestamp2, projectName, 2)
+	record2, _ := model.NewRecord(timestamp2, projectName, 2, nil)
 	mockStore.CreateRecord(context.Background(), record2)
 
 	timestamp3 := time.Date(2025, 5, 22, 14, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(timestamp3, projectName, 3)
+	record3, _ := model.NewRecord(timestamp3, projectName, 3, nil)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別のプロジェクトのレコード（取得されないはず）
 	timestamp4 := time.Date(2025, 5, 23, 16, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, "another-project", 4)
+	record4, _ := model.NewRecord(timestamp4, "another-project", 4, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -861,7 +861,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		recordTime := baseTime.Add(time.Duration(i) * time.Hour)
-		record, _ := model.NewRecord(recordTime, projectName, i+1)
+		record, _ := model.NewRecord(recordTime, projectName, i+1, nil)
 		mockStore.CreateRecord(context.Background(), record)
 		allRecords = append(allRecords, record)
 	}
@@ -959,20 +959,20 @@ func TestGetProject(t *testing.T) {
 	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(timestamp, "test", 10)
+	rec1, err := model.NewRecord(timestamp, "test", 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec1.ID.String()] = rec1
 
-	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec2.ID.String()] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(timestamp, "another", 20)
+	rec3, err := model.NewRecord(timestamp, "another", 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1035,20 +1035,20 @@ func TestDeleteProject(t *testing.T) {
 	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(timestamp, "test", 10)
+	rec1, err := model.NewRecord(timestamp, "test", 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec1.ID.String()] = rec1
 
-	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec2.ID.String()] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(timestamp, "another", 20)
+	rec3, err := model.NewRecord(timestamp, "another", 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1108,7 +1108,7 @@ func TestHandleGetGraph(t *testing.T) {
 
 	// テスト用のレコードを作成
 	now := time.Now()
-	record1, err := model.NewRecord(now.AddDate(0, 0, -7), projectName, 5)
+	record1, err := model.NewRecord(now.AddDate(0, 0, -7), projectName, 5, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -1314,14 +1314,14 @@ func TestBulkDeleteRecords(t *testing.T) {
 			// project1のレコードを作成（5件）
 			for i := 0; i < 5; i++ {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
-				record, _ := model.NewRecord(recordTime, project1, i+1)
+				record, _ := model.NewRecord(recordTime, project1, i+1, nil)
 				mockStore.CreateRecord(context.Background(), record)
 			}
 
 			// project2のレコードを作成（3件）
 			for i := 0; i < 3; i++ {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
-				record, _ := model.NewRecord(recordTime, project2, i+10)
+				record, _ := model.NewRecord(recordTime, project2, i+10, nil)
 				mockStore.CreateRecord(context.Background(), record)
 			}
 

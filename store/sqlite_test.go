@@ -40,7 +40,7 @@ func TestCreateAndGetRecord(t *testing.T) {
 
 	// テストデータ
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
-	record, err := model.NewRecord(timestamp, "exercise", 1)
+	record, err := model.NewRecord(timestamp, "exercise", 1, []string{"test"})
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestDeleteRecord(t *testing.T) {
 
 	// テストデータの作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
-	record, err := model.NewRecord(timestamp, "exercise", 1)
+	record, err := model.NewRecord(timestamp, "exercise", 1, []string{"test"})
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestListRecords(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		// 1日ずつずらしたレコードを作成
 		timestamp := yesterday.AddDate(0, 0, i)
-		record, err := model.NewRecord(timestamp, project, i+1)
+		record, err := model.NewRecord(timestamp, project, i+1, nil)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
@@ -183,7 +183,7 @@ func TestListRecords(t *testing.T) {
 	}
 
 	// 異なるプロジェクトのレコードも作成（リストに含まれないことを確認）
-	otherRecord, err := model.NewRecord(now, "other-project", 10)
+	otherRecord, err := model.NewRecord(now, "other-project", 10, nil)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestGetProjectInfo(t *testing.T) {
 			lastDate = timestamp
 		}
 
-		record, err := model.NewRecord(timestamp, project, val)
+		record, err := model.NewRecord(timestamp, project, val, nil)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
@@ -357,7 +357,7 @@ func TestDeleteProject(t *testing.T) {
 
 	// プロジェクト1用のレコードを3つ作成
 	for i := 0; i < 3; i++ {
-		record, err := model.NewRecord(now.AddDate(0, 0, i), project1, i+1)
+		record, err := model.NewRecord(now.AddDate(0, 0, i), project1, i+1, nil)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}
@@ -368,7 +368,7 @@ func TestDeleteProject(t *testing.T) {
 
 	// プロジェクト2用のレコードを2つ作成
 	for i := 0; i < 2; i++ {
-		record, err := model.NewRecord(now.AddDate(0, 0, i), project2, i+10)
+		record, err := model.NewRecord(now.AddDate(0, 0, i), project2, i+10, nil)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
 		}

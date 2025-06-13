@@ -94,8 +94,9 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 
 	// リクエストボディからデータを読み込み
 	var reqBody struct {
-    Timestamp string `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
-		Value  *int   `json:"value"`   // レコードの値, 省略可能
+    Timestamp string   `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
+		Value  *int      `json:"value"`     // レコードの値, 省略可能
+		Tags   []string  `json:"tags"`      // タグ一覧, 省略可能
 	}
 
 	// リクエストボディが存在する場合はデコード
@@ -149,7 +150,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 新しいレコードの作成
-	record, err := model.NewRecord(timestamp, projectName, *reqBody.Value)
+	record, err := model.NewRecord(timestamp, projectName, *reqBody.Value, reqBody.Tags)
 	if err != nil {
 		log.Printf("Error creating record: %v", err)
 		http.Error(w, "Failed to create record", http.StatusBadRequest)
@@ -286,7 +287,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	// アクセスカウンター機能: trackパラメータがある場合、レコードを自動作成
 	if query.Has("track") {
 		// 新しいレコードの作成（現在時刻、値は1）
-		record, err := model.NewRecord(time.Now(), projectName, 1)
+		record, err := model.NewRecord(time.Now(), projectName, 1, nil)
 		if err != nil {
 			log.Printf("Error creating access counter record: %v", err)
 			// エラーが発生してもグラフ表示は続行するため、エラーレスポンスは返さない
