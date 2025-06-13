@@ -84,6 +84,38 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, project string, from,
 	return records, nil
 }
 
+func (m *MockRecordStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error) {
+	var records []*model.Record
+
+	for _, r := range m.records {
+		if r.Project == project && !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
+			// タグフィルタチェック（OR条件）
+			tagMatch := false
+			for _, filterTag := range tags {
+				for _, recordTag := range r.Tags {
+					if recordTag == filterTag {
+						tagMatch = true
+						break
+					}
+				}
+				if tagMatch {
+					break
+				}
+			}
+			if tagMatch {
+				records = append(records, r)
+			}
+		}
+	}
+
+	// Timestampの昇順にソート（SQLiteの実装と同様に）
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Timestamp.Before(records[j].Timestamp)
+	})
+
+	return records, nil
+}
+
 func (m *MockRecordStore) Close() error {
 	return nil
 }

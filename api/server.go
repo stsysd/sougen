@@ -332,8 +332,37 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		toTime = defaultTo
 	}
 
-	// レコードの取得
-	records, err := s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+	// tagsクエリパラメータの処理
+	tagsStr := query.Get("tags")
+	var records []*model.Record
+
+	if tagsStr != "" {
+		// カンマ区切りでタグを分割
+		tags := strings.Split(tagsStr, ",")
+		// 空白を削除
+		for i, tag := range tags {
+			tags[i] = strings.TrimSpace(tag)
+		}
+		// 空のタグを除去
+		var filteredTags []string
+		for _, tag := range tags {
+			if tag != "" {
+				filteredTags = append(filteredTags, tag)
+			}
+		}
+
+		if len(filteredTags) > 0 {
+			// タグフィルタありのレコード取得
+			records, err = s.store.ListRecordsWithTags(r.Context(), projectName, fromTime, toTime, filteredTags)
+		} else {
+			// タグが空の場合は通常のレコード取得
+			records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+		}
+	} else {
+		// タグフィルタなしのレコード取得
+		records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+	}
+
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
 		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
@@ -426,8 +455,37 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		toTime = defaultTo
 	}
 
-	// レコードの取得（RecordStoreの実装により既にtimestamp順にソート済み）
-	records, err := s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+	// tagsクエリパラメータの処理
+	tagsStr := query.Get("tags")
+	var records []*model.Record
+
+	if tagsStr != "" {
+		// カンマ区切りでタグを分割
+		tags := strings.Split(tagsStr, ",")
+		// 空白を削除
+		for i, tag := range tags {
+			tags[i] = strings.TrimSpace(tag)
+		}
+		// 空のタグを除去
+		var filteredTags []string
+		for _, tag := range tags {
+			if tag != "" {
+				filteredTags = append(filteredTags, tag)
+			}
+		}
+
+		if len(filteredTags) > 0 {
+			// タグフィルタありのレコード取得
+			records, err = s.store.ListRecordsWithTags(r.Context(), projectName, fromTime, toTime, filteredTags)
+		} else {
+			// タグが空の場合は通常のレコード取得
+			records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+		}
+	} else {
+		// タグフィルタなしのレコード取得
+		records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+	}
+
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
 		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
