@@ -413,3 +413,191 @@ func TestDeleteProject(t *testing.T) {
 		t.Errorf("Expected no error when deleting non-existent project, got %v", err)
 	}
 }
+
+// TestListRecordsWithTags はタグフィルタでのレコード取得のテスト
+func TestListRecordsWithTags(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	project := "test-project"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// 異なるタグを持つレコードを作成
+	record1, _ := model.NewRecord(baseTime, project, 1, []string{"work", "urgent"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), project, 2, []string{"personal", "hobby"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), project, 3, []string{"work", "meeting"})
+	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), project, 4, []string{"personal", "urgent"})
+
+	// レコードを保存
+	for _, record := range []*model.Record{record1, record2, record3, record4} {
+		err := store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+	}
+
+	// テストケース
+	tests := []struct {
+		name          string
+		tags          []string
+		expectedCount int
+		expectedIDs   []uuid.UUID
+	}{
+		{
+			name:          "Filter by work tag",
+			tags:          []string{"work"},
+			expectedCount: 2,
+			expectedIDs:   []uuid.UUID{record1.ID, record3.ID},
+		},
+		{
+			name:          "Filter by personal tag",
+			tags:          []string{"personal"},
+			expectedCount: 2,
+			expectedIDs:   []uuid.UUID{record2.ID, record4.ID},
+		},
+		{
+			name:          "Filter by urgent tag",
+			tags:          []string{"urgent"},
+			expectedCount: 2,
+			expectedIDs:   []uuid.UUID{record1.ID, record4.ID},
+		},
+		{
+			name:          "Filter by multiple tags (OR)",
+			tags:          []string{"work", "hobby"},
+			expectedCount: 3,
+			expectedIDs:   []uuid.UUID{record1.ID, record2.ID, record3.ID},
+		},
+		{
+			name:          "Filter by non-existent tag",
+			tags:          []string{"nonexistent"},
+			expectedCount: 0,
+			expectedIDs:   []uuid.UUID{},
+		},
+		{
+			name:          "Filter by multiple urgent,meeting (OR)",
+			tags:          []string{"urgent", "meeting"},
+			expectedCount: 3,
+			expectedIDs:   []uuid.UUID{record1.ID, record3.ID, record4.ID},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// 日付範囲を設定（全レコードが含まれる範囲）
+			fromTime := baseTime.Add(-1 * time.Hour)
+			toTime := baseTime.Add(5 * time.Hour)
+
+			// タグフィルタでレコードを取得
+			records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tc.tags)
+			if err != nil {
+				t.Fatalf("Failed to list records with tags: %v", err)
+			}
+
+			// 件数チェック
+			if len(records) != tc.expectedCount {
+				t.Errorf("Expected %d records, got %d", tc.expectedCount, len(records))
+			}
+
+			// IDが期待されるものと一致するかチェック
+			actualIDs := make(map[uuid.UUID]bool)
+			for _, record := range records {
+				actualIDs[record.ID] = true
+			}
+
+			for _, expectedID := range tc.expectedIDs {
+				if !actualIDs[expectedID] {
+					t.Errorf("Expected record with ID %s not found in results", expectedID)
+				}
+			}
+
+			// 取得されたレコードが期待されるタグを持っているかチェック
+			for _, record := range records {
+				hasMatchingTag := false
+				for _, filterTag := range tc.tags {
+					for _, recordTag := range record.Tags {
+						if recordTag == filterTag {
+							hasMatchingTag = true
+							break
+						}
+					}
+					if hasMatchingTag {
+						break
+					}
+				}
+				if !hasMatchingTag && len(tc.tags) > 0 {
+					t.Errorf("Record %s does not have any of the filter tags %v, but was returned", record.ID, tc.tags)
+				}
+			}
+		})
+	}
+}
+
+// TestListRecordsWithTagsEmptyResult は空の結果のテスト
+func TestListRecordsWithTagsEmptyResult(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	project := "empty-project"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// タグなしのレコードを作成
+	record, _ := model.NewRecord(baseTime, project, 1, []string{})
+	err := store.CreateRecord(context.Background(), record)
+	if err != nil {
+		t.Fatalf("Failed to create record: %v", err)
+	}
+
+	// 存在しないタグでフィルタ
+	fromTime := baseTime.Add(-1 * time.Hour)
+	toTime := baseTime.Add(1 * time.Hour)
+	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"nonexistent"})
+	if err != nil {
+		t.Fatalf("Failed to list records with tags: %v", err)
+	}
+
+	if len(records) != 0 {
+		t.Errorf("Expected 0 records, got %d", len(records))
+	}
+}
+
+// TestListRecordsWithTagsDateRange は日付範囲フィルタのテスト
+func TestListRecordsWithTagsDateRange(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	project := "date-range-project"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// 異なる日時のレコードを作成
+	record1, _ := model.NewRecord(baseTime, project, 1, []string{"work"})
+	record2, _ := model.NewRecord(baseTime.Add(24*time.Hour), project, 2, []string{"work"})
+	record3, _ := model.NewRecord(baseTime.Add(48*time.Hour), project, 3, []string{"work"})
+
+	for _, record := range []*model.Record{record1, record2, record3} {
+		err := store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+	}
+
+	// 最初の2日分のみを取得
+	fromTime := baseTime.Add(-1 * time.Hour)
+	toTime := baseTime.Add(25 * time.Hour)
+	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"work"})
+	if err != nil {
+		t.Fatalf("Failed to list records with tags: %v", err)
+	}
+
+	// 2件取得されることを確認
+	if len(records) != 2 {
+		t.Errorf("Expected 2 records, got %d", len(records))
+	}
+
+	// 正しいレコードが取得されることを確認
+	expectedIDs := map[uuid.UUID]bool{record1.ID: true, record2.ID: true}
+	for _, record := range records {
+		if !expectedIDs[record.ID] {
+			t.Errorf("Unexpected record ID %s in results", record.ID)
+		}
+	}
+}

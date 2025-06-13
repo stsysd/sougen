@@ -1435,3 +1435,230 @@ func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
 		})
 	}
 }
+
+// TestCreateRecordWithTags はタグ付きレコード作成のテスト
+func TestCreateRecordWithTags(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// リクエストボディ
+	requestBody := map[string]interface{}{
+		"timestamp": "2025-05-21T14:30:00Z",
+		"value":     5,
+		"tags":      []string{"work", "important", "urgent"},
+	}
+
+	jsonBody, _ := json.Marshal(requestBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/test-project/r", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// レスポンスの検証
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	var responseRecord model.Record
+	if err := json.NewDecoder(w.Body).Decode(&responseRecord); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// タグが正しく設定されているかチェック
+	expectedTags := []string{"work", "important", "urgent"}
+	if len(responseRecord.Tags) != len(expectedTags) {
+		t.Errorf("Expected %d tags, got %d", len(expectedTags), len(responseRecord.Tags))
+	}
+
+	for i, expectedTag := range expectedTags {
+		if i >= len(responseRecord.Tags) || responseRecord.Tags[i] != expectedTag {
+			t.Errorf("Expected tag[%d] to be %s, got %s", i, expectedTag, responseRecord.Tags[i])
+		}
+	}
+
+	// ストアに正しく保存されているかチェック
+	storedRecord, err := mockStore.GetRecord(context.Background(), responseRecord.ID)
+	if err != nil {
+		t.Fatalf("Failed to get stored record: %v", err)
+	}
+
+	if len(storedRecord.Tags) != len(expectedTags) {
+		t.Errorf("Stored record: Expected %d tags, got %d", len(expectedTags), len(storedRecord.Tags))
+	}
+}
+
+// TestCreateRecordWithEmptyTags は空タグ配列でのレコード作成のテスト
+func TestCreateRecordWithEmptyTags(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// リクエストボディ（空のタグ配列）
+	requestBody := map[string]interface{}{
+		"timestamp": "2025-05-21T14:30:00Z",
+		"value":     3,
+		"tags":      []string{},
+	}
+
+	jsonBody, _ := json.Marshal(requestBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/test-project/r", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	var responseRecord model.Record
+	if err := json.NewDecoder(w.Body).Decode(&responseRecord); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// 空のタグ配列が正しく処理されているかチェック
+	if len(responseRecord.Tags) != 0 {
+		t.Errorf("Expected 0 tags, got %d", len(responseRecord.Tags))
+	}
+}
+
+// TestListRecordsWithTagsFilter はタグフィルタでのレコード取得のテスト
+func TestListRecordsWithTagsFilter(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	projectName := "test-project"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// 異なるタグを持つレコードを作成
+	record1, _ := model.NewRecord(baseTime, projectName, 1, []string{"work", "urgent"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectName, 2, []string{"personal", "hobby"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), projectName, 3, []string{"work", "meeting"})
+	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), projectName, 4, []string{"personal", "urgent"})
+
+	mockStore.CreateRecord(context.Background(), record1)
+	mockStore.CreateRecord(context.Background(), record2)
+	mockStore.CreateRecord(context.Background(), record3)
+	mockStore.CreateRecord(context.Background(), record4)
+
+	tests := []struct {
+		name         string
+		tagsFilter   string
+		expectedIDs  []uuid.UUID
+		expectedCount int
+	}{
+		{
+			name:         "Filter by work tag",
+			tagsFilter:   "work",
+			expectedIDs:  []uuid.UUID{record1.ID, record3.ID},
+			expectedCount: 2,
+		},
+		{
+			name:         "Filter by personal tag",
+			tagsFilter:   "personal",
+			expectedIDs:  []uuid.UUID{record2.ID, record4.ID},
+			expectedCount: 2,
+		},
+		{
+			name:         "Filter by urgent tag (OR)",
+			tagsFilter:   "urgent",
+			expectedIDs:  []uuid.UUID{record1.ID, record4.ID},
+			expectedCount: 2,
+		},
+		{
+			name:         "Filter by multiple tags (OR)",
+			tagsFilter:   "work,hobby",
+			expectedIDs:  []uuid.UUID{record1.ID, record2.ID, record3.ID},
+			expectedCount: 3,
+		},
+		{
+			name:         "Filter by non-existent tag",
+			tagsFilter:   "nonexistent",
+			expectedIDs:  []uuid.UUID{},
+			expectedCount: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url := fmt.Sprintf("/api/v0/p/%s/r?tags=%s", projectName, tc.tagsFilter)
+			req := httptest.NewRequest(http.MethodGet, url, nil)
+			req.Header.Set("X-API-Key", testAPIKey)
+
+			w := httptest.NewRecorder()
+			server.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+			}
+
+			var records []*model.Record
+			if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			if len(records) != tc.expectedCount {
+				t.Errorf("Expected %d records, got %d", tc.expectedCount, len(records))
+			}
+
+			// IDが期待されるものと一致するかチェック
+			actualIDs := make(map[uuid.UUID]bool)
+			for _, record := range records {
+				actualIDs[record.ID] = true
+			}
+
+			for _, expectedID := range tc.expectedIDs {
+				if !actualIDs[expectedID] {
+					t.Errorf("Expected record with ID %s not found in results", expectedID)
+				}
+			}
+		})
+	}
+}
+
+// TestGetGraphWithTagsFilter はタグフィルタでのヒートマップ生成のテスト
+func TestGetGraphWithTagsFilter(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	projectName := "test-project"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// 異なるタグを持つレコードを作成
+	record1, _ := model.NewRecord(baseTime, projectName, 5, []string{"work"})
+	record2, _ := model.NewRecord(baseTime.Add(24*time.Hour), projectName, 3, []string{"personal"})
+	record3, _ := model.NewRecord(baseTime.Add(48*time.Hour), projectName, 7, []string{"work"})
+
+	mockStore.CreateRecord(context.Background(), record1)
+	mockStore.CreateRecord(context.Background(), record2)
+	mockStore.CreateRecord(context.Background(), record3)
+
+	// workタグでフィルタしたヒートマップ生成
+	url := fmt.Sprintf("/p/%s/graph.svg?tags=work", projectName)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/svg+xml" {
+		t.Errorf("Expected Content-Type 'image/svg+xml', got '%s'", contentType)
+	}
+
+	svgContent := w.Body.String()
+	if len(svgContent) == 0 {
+		t.Error("Expected non-empty SVG content")
+	}
+
+	// SVGの基本構造チェック
+	if !strings.Contains(svgContent, "<svg") {
+		t.Error("Response does not contain SVG tag")
+	}
+}
