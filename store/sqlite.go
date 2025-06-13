@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/stsysd/sougen/internal/db"
+	"github.com/stsysd/sougen/db"
 	"github.com/stsysd/sougen/model"
 )
 
