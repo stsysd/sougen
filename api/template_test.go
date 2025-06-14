@@ -89,7 +89,7 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 			fullURL := baseURL + "?" + params.Encode()
 			req := httptest.NewRequest(http.MethodPost, fullURL, strings.NewReader(tc.requestBody))
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-API-Key", testAPIToken)
+			req.Header.Set("X-API-Key", testAPIKey)
 
 			// レスポンスレコーダーの作成
 			w := httptest.NewRecorder()
@@ -178,7 +178,7 @@ func TestCreateRecordWithInvalidTemplate(t *testing.T) {
 			fullURL := baseURL + "?" + params.Encode()
 			req := httptest.NewRequest(http.MethodPost, fullURL, strings.NewReader(tc.requestBody))
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-API-Key", testAPIToken)
+			req.Header.Set("X-API-Key", testAPIKey)
 
 			// レスポンスレコーダーの作成
 			w := httptest.NewRecorder()
@@ -212,7 +212,7 @@ func TestCreateRecordWithTemplateNoBody(t *testing.T) {
 	fullURL := baseURL + "?" + params.Encode()
 	req := httptest.NewRequest(http.MethodPost, fullURL, nil)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()

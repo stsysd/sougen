@@ -20,14 +20,14 @@ import (
 )
 
 // テスト用の定数
-const testAPIToken = "test-api-token"
+const testAPIKey = "test-api-key"
 
 // テスト用の設定を生成するヘルパー関数
 func newTestConfig() *config.Config {
 	return &config.Config{
 		DataDir:  "./testdata",
 		Port:     "8080",
-		APIToken: testAPIToken,
+		APIKey: testAPIKey,
 	}
 }
 
@@ -184,7 +184,7 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	// リクエストの作成 - 新しいURLパスを使用
 	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -249,7 +249,7 @@ func TestCreateRecordWithoutTimestamp(t *testing.T) {
 	// リクエストの作成
 	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -316,7 +316,7 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 	// リクエストの作成
 	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -369,7 +369,7 @@ func TestCreateRecordWithEmptyBody(t *testing.T) {
 	// 空のリクエストボディ
 	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", nil)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -433,7 +433,7 @@ func TestGetRecordEndpoint(t *testing.T) {
 
 	// リクエストの作成 - 新しいURLパスを使用
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -485,7 +485,7 @@ func TestGetNonExistentRecordEndpoint(t *testing.T) {
 	// 存在しないIDでリクエスト
 	nonExistentID := uuid.New().String()
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+projectName+"/r/"+nonExistentID, nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -519,7 +519,7 @@ func TestGetRecordFromWrongProject(t *testing.T) {
 
 	// 間違ったプロジェクト名でリクエスト
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -552,7 +552,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 
 	// リクエストの作成
 	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -583,7 +583,7 @@ func TestDeleteNonExistentRecordEndpoint(t *testing.T) {
 	// 存在しないIDでリクエスト
 	nonExistentID := uuid.New().String()
 	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+projectName+"/r/"+nonExistentID, nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -617,7 +617,7 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 
 	// 間違ったプロジェクト名でリクエスト
 	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -674,7 +674,7 @@ func TestGetGraphEndpoint(t *testing.T) {
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -730,7 +730,7 @@ func TestGetGraphEndpointWithoutData(t *testing.T) {
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -796,7 +796,7 @@ func TestListRecordsEndpoint(t *testing.T) {
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
 	w := httptest.NewRecorder()
@@ -872,7 +872,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 	t.Run("First Page", func(t *testing.T) {
 		url := fmt.Sprintf("/api/v0/p/%s/r?limit=3&offset=0", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIToken)
+		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
 
@@ -902,7 +902,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 	t.Run("Second Page", func(t *testing.T) {
 		url := fmt.Sprintf("/api/v0/p/%s/r?limit=4&offset=3", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIToken)
+		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
 
@@ -932,7 +932,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 	t.Run("Out of Range Offset", func(t *testing.T) {
 		url := fmt.Sprintf("/api/v0/p/%s/r?limit=5&offset=20", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIToken)
+		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
 
@@ -982,7 +982,7 @@ func TestGetProject(t *testing.T) {
 
 	// テスト対象のエンドポイントを呼び出す
 	req := httptest.NewRequest("GET", "/api/v0/p/test", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -1017,7 +1017,7 @@ func TestGetProjectNotFound(t *testing.T) {
 
 	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクト名
 	req := httptest.NewRequest("GET", "/api/v0/p/non-existent", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -1058,7 +1058,7 @@ func TestDeleteProject(t *testing.T) {
 
 	// テスト対象のエンドポイントを呼び出す
 	req := httptest.NewRequest("DELETE", "/api/v0/p/test", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -1087,7 +1087,7 @@ func TestDeleteNonExistentProject(t *testing.T) {
 
 	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクト名
 	req := httptest.NewRequest("DELETE", "/api/v0/p/non-existent", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -1116,7 +1116,7 @@ func TestHandleGetGraph(t *testing.T) {
 
 	// リクエストの作成
 	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
 	// ハンドラの実行
@@ -1152,7 +1152,7 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 
 	// trackパラメータ付きのリクエストを作成
 	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph?track", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
 	// 実行前のレコード数を記録
@@ -1213,7 +1213,7 @@ func TestHandleGetGraphWithoutTrackParam(t *testing.T) {
 
 	// trackパラメータなしのリクエストを作成
 	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
 	// 実行前のレコード数を記録
@@ -1240,7 +1240,7 @@ func TestHandleGetGraphSVGExtension(t *testing.T) {
 
 	// .svg拡張子付きのリクエストを作成
 	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph.svg", nil)
-	req.Header.Set("X-API-Key", testAPIToken)
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
 	// ハンドラの実行
@@ -1335,7 +1335,7 @@ func TestBulkDeleteRecords(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodDelete, url, nil)
-			req.Header.Set("X-API-Key", testAPIToken)
+			req.Header.Set("X-API-Key", testAPIKey)
 			w := httptest.NewRecorder()
 
 			// リクエスト実行
@@ -1392,7 +1392,7 @@ func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodDelete, tc.url, nil)
-			req.Header.Set("X-API-Key", testAPIToken)
+			req.Header.Set("X-API-Key", testAPIKey)
 			w := httptest.NewRecorder()
 
 			server.ServeHTTP(w, req)

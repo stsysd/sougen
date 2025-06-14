@@ -13,7 +13,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		apiKey := r.Header.Get("X-API-Key")
 
 		// APIキーがサーバー側で設定されていない場合はエラー
-		if s.config.APIToken == "" {
+		if s.config.APIKey == "" {
 			type errorResponse struct {
 				Error string `json:"error"`
 				Code  int    `json:"code"`
@@ -28,7 +28,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// APIキーが一致するか確認
-		if apiKey != s.config.APIToken {
+		if apiKey != s.config.APIKey {
 			type errorResponse struct {
 				Error string `json:"error"`
 				Code  int    `json:"code"`

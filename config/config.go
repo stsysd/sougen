@@ -14,8 +14,8 @@ type Config struct {
 	// HTTPサーバーのポート
 	Port string
 
-	// API認証トークン
-	APIToken string
+	// API認証キー
+	APIKey string
 }
 
 // NewConfig は環境変数から設定を読み込み、Configインスタンスを生成します。
@@ -32,16 +32,16 @@ func NewConfig() *Config {
 		port = "8080"
 	}
 
-	// API認証トークンの設定
-	apiToken := os.Getenv("SOUGEN_API_TOKEN")
-	if apiToken == "" {
+	// API認証キーの設定
+	apiKey := os.Getenv("SOUGEN_API_KEY")
+	if apiKey == "" {
 		// デフォルトトークンは設定しない
-		panic("SOUGEN_API_TOKEN is not set")
+		panic("SOUGEN_API_KEY is not set")
 	}
 
 	return &Config{
 		DataDir:  dataDir,
 		Port:     port,
-		APIToken: apiToken,
+		APIKey: apiKey,
 	}
 }
