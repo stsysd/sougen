@@ -25,11 +25,11 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 
 	// テストケース
 	tests := []struct {
-		name           string
-		template       string
-		requestBody    string
-		expectedStatus int
-		expectedValue  int
+		name              string
+		template          string
+		requestBody       string
+		expectedStatus    int
+		expectedValue     int
 		expectedTimestamp string
 	}{
 		{
@@ -39,8 +39,8 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 				"pushed_at": "2025-01-01T12:00:00Z",
 				"commits": [{"id":"1"}, {"id":"2"}, {"id":"3"}]
 			}`,
-			expectedStatus: http.StatusCreated,
-			expectedValue:  3,
+			expectedStatus:    http.StatusCreated,
+			expectedValue:     3,
 			expectedTimestamp: "2025-01-01T12:00:00Z",
 		},
 		{
@@ -50,8 +50,8 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 				"count": 5,
 				"timestamp": "2025-02-01T15:30:00Z"
 			}`,
-			expectedStatus: http.StatusCreated,
-			expectedValue:  5,
+			expectedStatus:    http.StatusCreated,
+			expectedValue:     5,
 			expectedTimestamp: "2025-02-01T15:30:00Z",
 		},
 		{
@@ -74,8 +74,8 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 					}
 				}
 			}`,
-			expectedStatus: http.StatusCreated,
-			expectedValue:  7,
+			expectedStatus:    http.StatusCreated,
+			expectedValue:     7,
 			expectedTimestamp: "2025-03-01T10:00:00Z",
 		},
 	}
@@ -261,11 +261,11 @@ func TestTransformRequestBody(t *testing.T) {
 	server := &Server{}
 
 	tests := []struct {
-		name           string
-		template       string
-		inputJSON      string
-		expectedJSON   string
-		expectError    bool
+		name         string
+		template     string
+		inputJSON    string
+		expectedJSON string
+		expectError  bool
 	}{
 		{
 			name:         "Simple field extraction",

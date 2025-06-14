@@ -40,8 +40,8 @@ func NewConfig() *Config {
 	}
 
 	return &Config{
-		DataDir:  dataDir,
-		Port:     port,
-		APIKey: apiKey,
+		DataDir: dataDir,
+		Port:    port,
+		APIKey:  apiKey,
 	}
 }
