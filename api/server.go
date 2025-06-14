@@ -510,7 +510,33 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// SVGの生成
 	// NOTE: Dataは昇順であることを前提としている
-	svg := heatmap.GenerateYearlyHeatmapSVG(data, nil)
+	opts := &heatmap.Options{
+		CellSize:    12,
+		CellPadding: 2,
+		FontSize:    10,
+		FontFamily:  "sans-serif",
+		Colors:      []string{"#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"},
+		ProjectName: projectName,
+	}
+
+	// tagsがある場合はタイトルに含める
+	if tagsStr != "" {
+		tags := strings.Split(tagsStr, ",")
+		// 空白を削除
+		for i, tag := range tags {
+			tags[i] = strings.TrimSpace(tag)
+		}
+		// 空のタグを除去
+		var filteredTags []string
+		for _, tag := range tags {
+			if tag != "" {
+				filteredTags = append(filteredTags, tag)
+			}
+		}
+		opts.Tags = filteredTags
+	}
+
+	svg := heatmap.GenerateYearlyHeatmapSVG(data, opts)
 
 	// レスポンスの返却
 	w.Header().Set("Content-Type", "image/svg+xml")

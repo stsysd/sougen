@@ -18,4 +18,6 @@ type Options struct {
 	FontSize    int      // font size for month labels (px)
 	FontFamily  string   // font family for labels
 	ValueRanges []int    // optional thresholds for levels 1..N-1; len(ValueRanges)==len(Colors)-1
+	ProjectName string   // project name for title
+	Tags        []string // tags filter for title
 }
