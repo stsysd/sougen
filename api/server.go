@@ -21,6 +21,17 @@ import (
 	"github.com/stsysd/sougen/store"
 )
 
+// getDefaultDateRange は最新の週+52週間のデフォルト日付範囲を計算します。
+func getDefaultDateRange() (time.Time, time.Time) {
+	now := time.Now()
+	// 今日を含む週の開始日(日曜日)を求める
+	weekday := int(now.Weekday())
+	latestWeekStart := now.AddDate(0, 0, -weekday)
+	// 52週間前から開始
+	defaultFrom := latestWeekStart.AddDate(0, 0, -52*7)
+	return defaultFrom, now
+}
+
 // Server はAPIサーバーの構造体です。
 type Server struct {
 	router *http.ServeMux
@@ -406,10 +417,8 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// デフォルトの日付範囲を設定: 1年前から今日まで
-	now := time.Now()
-	defaultFrom := now.AddDate(-1, 0, 0)
-	defaultTo := now
+	// デフォルトの日付範囲を設定: 最新の週+52週間
+	defaultFrom, defaultTo := getDefaultDateRange()
 
 	// クエリパラメータからfrom日時を取得
 	fromStr := query.Get("from")
@@ -555,10 +564,8 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	// クエリパラメータの解析
 	query := r.URL.Query()
 
-	// デフォルトの日付範囲を設定: 1年前から今日まで
-	now := time.Now()
-	defaultFrom := now.AddDate(-1, 0, 0)
-	defaultTo := now
+	// デフォルトの日付範囲を設定: 最新の週+52週間
+	defaultFrom, defaultTo := getDefaultDateRange()
 
 	// クエリパラメータからfrom日時を取得
 	fromStr := query.Get("from")
