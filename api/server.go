@@ -48,20 +48,20 @@ func (s *Server) routes() {
 	securedHandler := http.NewServeMux()
 
 	// Project and Record endpoints
-	securedHandler.HandleFunc("GET /v0/p/{project_name}", s.handleGetProject)
-	securedHandler.HandleFunc("DELETE /v0/p/{project_name}", s.handleDeleteProject)
-	securedHandler.HandleFunc("POST /v0/p/{project_name}/r", s.handleCreateRecord)
-	securedHandler.HandleFunc("GET /v0/p/{project_name}/r", s.handleListRecords)
-	securedHandler.HandleFunc("GET /v0/p/{project_name}/r/{record_id}", s.handleGetRecord)
-	securedHandler.HandleFunc("DELETE /v0/p/{project_name}/r/{record_id}", s.handleDeleteRecord)
-	securedHandler.HandleFunc("DELETE /v0/r", s.handleBulkDeleteRecords)
+	securedHandler.HandleFunc("GET /api/v0/p/{project_name}", s.handleGetProject)
+	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}", s.handleDeleteProject)
+	securedHandler.HandleFunc("POST /api/v0/p/{project_name}/r", s.handleCreateRecord)
+	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/r", s.handleListRecords)
+	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/r/{record_id}", s.handleGetRecord)
+	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}/r/{record_id}", s.handleDeleteRecord)
+	securedHandler.HandleFunc("DELETE /api/v0/r", s.handleBulkDeleteRecords)
 
 	// 認証ミドルウェアを適用し、メインルータにマウント
-	s.router.Handle("/", s.authMiddleware(securedHandler))
+	s.router.Handle("/api/", s.authMiddleware(securedHandler))
 
 	// Graph endpoints - support both with and without .svg extension
-	s.router.HandleFunc("GET /v0/p/{project_name}/graph.svg", s.handleGetGraph)
-	s.router.HandleFunc("GET /v0/p/{project_name}/graph", s.handleGetGraph)
+	s.router.HandleFunc("GET /p/{project_name}/graph.svg", s.handleGetGraph)
+	s.router.HandleFunc("GET /p/{project_name}/graph", s.handleGetGraph)
 }
 
 // ServeHTTP はServer構造体をhttp.Handlerとして実装します。

@@ -182,7 +182,7 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	reqBytes, _ := json.Marshal(reqBody)
 
 	// リクエストの作成 - 新しいURLパスを使用
-	req := httptest.NewRequest(http.MethodPost, "/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIToken)
 
@@ -247,7 +247,7 @@ func TestCreateRecordWithoutTimestamp(t *testing.T) {
 	reqBytes, _ := json.Marshal(reqBody)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodPost, "/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIToken)
 
@@ -314,7 +314,7 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 	reqBytes, _ := json.Marshal(reqBody)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodPost, "/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIToken)
 
@@ -367,7 +367,7 @@ func TestCreateRecordWithEmptyBody(t *testing.T) {
 	projectName := "exercise"
 
 	// 空のリクエストボディ
-	req := httptest.NewRequest(http.MethodPost, "/v0/p/"+projectName+"/r", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", nil)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIToken)
 
@@ -432,7 +432,7 @@ func TestGetRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストの作成 - 新しいURLパスを使用
-	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 
 	// レスポンスレコーダーの作成
@@ -484,7 +484,7 @@ func TestGetNonExistentRecordEndpoint(t *testing.T) {
 
 	// 存在しないIDでリクエスト
 	nonExistentID := uuid.New().String()
-	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/r/"+nonExistentID, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+projectName+"/r/"+nonExistentID, nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 
 	// レスポンスレコーダーの作成
@@ -518,7 +518,7 @@ func TestGetRecordFromWrongProject(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// 間違ったプロジェクト名でリクエスト
-	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 
 	// レスポンスレコーダーの作成
@@ -551,7 +551,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodDelete, "/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 
 	// レスポンスレコーダーの作成
@@ -582,7 +582,7 @@ func TestDeleteNonExistentRecordEndpoint(t *testing.T) {
 
 	// 存在しないIDでリクエスト
 	nonExistentID := uuid.New().String()
-	req := httptest.NewRequest(http.MethodDelete, "/v0/p/"+projectName+"/r/"+nonExistentID, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+projectName+"/r/"+nonExistentID, nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 
 	// レスポンスレコーダーの作成
@@ -616,7 +616,7 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// 間違ったプロジェクト名でリクエスト
-	req := httptest.NewRequest(http.MethodDelete, "/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 
 	// レスポンスレコーダーの作成
@@ -669,7 +669,7 @@ func TestGetGraphEndpoint(t *testing.T) {
 	// リクエストの作成 (日付範囲指定あり)
 	fromDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 31, 23, 59, 59, 0, time.UTC)
-	url := fmt.Sprintf("/v0/p/%s/graph?from=%s&to=%s",
+	url := fmt.Sprintf("/p/%s/graph?from=%s&to=%s",
 		projectName,
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
@@ -725,7 +725,7 @@ func TestGetGraphEndpointWithoutData(t *testing.T) {
 	// 明示的に日付範囲を指定する（データなしだが日付範囲は有効）
 	fromDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 31, 23, 59, 59, 0, time.UTC)
-	url := fmt.Sprintf("/v0/p/%s/graph?from=%s&to=%s",
+	url := fmt.Sprintf("/p/%s/graph?from=%s&to=%s",
 		projectName,
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
@@ -791,7 +791,7 @@ func TestListRecordsEndpoint(t *testing.T) {
 	// リクエストの作成 - 日付範囲を指定
 	fromDate := time.Date(2025, 5, 15, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 25, 23, 59, 59, 0, time.UTC)
-	url := fmt.Sprintf("/v0/p/%s/r?from=%s&to=%s",
+	url := fmt.Sprintf("/api/v0/p/%s/r?from=%s&to=%s",
 		projectName,
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
@@ -870,7 +870,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	// ケース1: limit=3, offset=0 で最初の3件を取得
 	t.Run("First Page", func(t *testing.T) {
-		url := fmt.Sprintf("/v0/p/%s/r?limit=3&offset=0", projectName)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=3&offset=0", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIToken)
 		w := httptest.NewRecorder()
@@ -900,7 +900,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	// ケース2: limit=4, offset=3 で次の4件を取得
 	t.Run("Second Page", func(t *testing.T) {
-		url := fmt.Sprintf("/v0/p/%s/r?limit=4&offset=3", projectName)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=4&offset=3", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIToken)
 		w := httptest.NewRecorder()
@@ -930,7 +930,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	// ケース3: offset が範囲外の場合、空配列が返される
 	t.Run("Out of Range Offset", func(t *testing.T) {
-		url := fmt.Sprintf("/v0/p/%s/r?limit=5&offset=20", projectName)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=5&offset=20", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIToken)
 		w := httptest.NewRecorder()
@@ -981,7 +981,7 @@ func TestGetProject(t *testing.T) {
 	server := NewServer(store, newTestConfig())
 
 	// テスト対象のエンドポイントを呼び出す
-	req := httptest.NewRequest("GET", "/v0/p/test", nil)
+	req := httptest.NewRequest("GET", "/api/v0/p/test", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1016,7 +1016,7 @@ func TestGetProjectNotFound(t *testing.T) {
 	server := NewServer(store, newTestConfig())
 
 	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクト名
-	req := httptest.NewRequest("GET", "/v0/p/non-existent", nil)
+	req := httptest.NewRequest("GET", "/api/v0/p/non-existent", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1057,7 +1057,7 @@ func TestDeleteProject(t *testing.T) {
 	server := NewServer(store, newTestConfig())
 
 	// テスト対象のエンドポイントを呼び出す
-	req := httptest.NewRequest("DELETE", "/v0/p/test", nil)
+	req := httptest.NewRequest("DELETE", "/api/v0/p/test", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1086,7 +1086,7 @@ func TestDeleteNonExistentProject(t *testing.T) {
 	server := NewServer(store, newTestConfig())
 
 	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクト名
-	req := httptest.NewRequest("DELETE", "/v0/p/non-existent", nil)
+	req := httptest.NewRequest("DELETE", "/api/v0/p/non-existent", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1115,7 +1115,7 @@ func TestHandleGetGraph(t *testing.T) {
 	mockStore.CreateRecord(context.Background(), record1)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph", nil)
+	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	w := httptest.NewRecorder()
 
@@ -1151,7 +1151,7 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	projectName := "counter-test"
 
 	// trackパラメータ付きのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph?track", nil)
+	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph?track", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	w := httptest.NewRecorder()
 
@@ -1212,7 +1212,7 @@ func TestHandleGetGraphWithoutTrackParam(t *testing.T) {
 	projectName := "no-counter-test"
 
 	// trackパラメータなしのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph", nil)
+	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	w := httptest.NewRecorder()
 
@@ -1239,7 +1239,7 @@ func TestHandleGetGraphSVGExtension(t *testing.T) {
 	projectName := "svg-ext-test"
 
 	// .svg拡張子付きのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, "/v0/p/"+projectName+"/graph.svg", nil)
+	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph.svg", nil)
 	req.Header.Set("X-API-Key", testAPIToken)
 	w := httptest.NewRecorder()
 
@@ -1329,7 +1329,7 @@ func TestBulkDeleteRecords(t *testing.T) {
 			server := NewServer(mockStore, newTestConfig())
 
 			// リクエストURLの組み立て
-			url := "/v0/r?until=" + tc.until.Format(time.RFC3339)
+			url := "/api/v0/r?until=" + tc.until.Format(time.RFC3339)
 			if tc.project != "" {
 				url += "&project=" + tc.project
 			}
@@ -1379,12 +1379,12 @@ func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
 	}{
 		{
 			name:           "until パラメータ不足",
-			url:            "/v0/r",
+			url:            "/api/v0/r",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "不正な until フォーマット",
-			url:            "/v0/r?until=invalid-date",
+			url:            "/api/v0/r?until=invalid-date",
 			expectedStatus: http.StatusBadRequest,
 		},
 	}

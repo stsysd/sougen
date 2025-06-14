@@ -83,7 +83,7 @@ func TestCreateRecordWithTemplate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// リクエストの作成
-			baseURL := fmt.Sprintf("/v0/p/%s/r", projectName)
+			baseURL := fmt.Sprintf("/api/v0/p/%s/r", projectName)
 			params := url.Values{}
 			params.Set("template", tc.template)
 			fullURL := baseURL + "?" + params.Encode()
@@ -172,7 +172,7 @@ func TestCreateRecordWithInvalidTemplate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// リクエストの作成
-			baseURL := fmt.Sprintf("/v0/p/%s/r", projectName)
+			baseURL := fmt.Sprintf("/api/v0/p/%s/r", projectName)
 			params := url.Values{}
 			params.Set("template", tc.template)
 			fullURL := baseURL + "?" + params.Encode()
@@ -206,7 +206,7 @@ func TestCreateRecordWithTemplateNoBody(t *testing.T) {
 
 	// テンプレートパラメータ付きで空のボディのリクエスト
 	template := `{"value": 1}`
-	baseURL := fmt.Sprintf("/v0/p/%s/r", projectName)
+	baseURL := fmt.Sprintf("/api/v0/p/%s/r", projectName)
 	params := url.Values{}
 	params.Set("template", template)
 	fullURL := baseURL + "?" + params.Encode()

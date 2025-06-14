@@ -38,7 +38,7 @@ paths:
                     type: string
                     example: ok
 
-  /v0/p/{project_name}:
+  /api/v0/p/{project_name}:
     parameters:
       - name: project_name
         in: path
@@ -99,7 +99,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/p/{project_name}/r:
+  /api/v0/p/{project_name}/r:
     parameters:
       - name: project_name
         in: path
@@ -195,7 +195,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/p/{project_name}/r/{record_id}:
+  /api/v0/p/{project_name}/r/{record_id}:
     parameters:
       - name: project_name
         in: path
@@ -263,7 +263,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/p/{project_name}/graph.svg:
+  /p/{project_name}/graph.svg:
     parameters:
       - name: project_name
         in: path
@@ -313,7 +313,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /v0/r:
+  /api/v0/r:
     delete:
       tags:
         - records
