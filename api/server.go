@@ -53,6 +53,7 @@ func (s *Server) routes() {
 	securedHandler.HandleFunc("POST /api/v0/p/{project_name}/r", s.handleCreateRecord)
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/r", s.handleListRecords)
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/r/{record_id}", s.handleGetRecord)
+	securedHandler.HandleFunc("PUT /api/v0/p/{project_name}/r/{record_id}", s.handleUpdateRecord)
 	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}/r/{record_id}", s.handleDeleteRecord)
 	securedHandler.HandleFunc("DELETE /api/v0/r", s.handleBulkDeleteRecords)
 
@@ -94,9 +95,9 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 
 	// リクエストボディからデータを読み込み
 	var reqBody struct {
-    Timestamp string   `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
-		Value  *int      `json:"value"`     // レコードの値, 省略可能
-		Tags   []string  `json:"tags"`      // タグ一覧, 省略可能
+		Timestamp string   `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
+		Value     *int     `json:"value"`     // レコードの値, 省略可能
+		Tags      []string `json:"tags"`      // タグ一覧, 省略可能
 	}
 
 	// リクエストボディが存在する場合はデコード
@@ -216,6 +217,111 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 	// レスポンスの返却
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(record); err != nil {
+		log.Printf("Error encoding response: %v", err)
+	}
+}
+
+// handleUpdateRecord は特定のIDのレコードを更新するハンドラーです。
+func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
+	// URLからプロジェクト名を取得
+	projectName := r.PathValue("project_name")
+	if projectName == "" {
+		http.Error(w, "Project name is required", http.StatusBadRequest)
+		return
+	}
+
+	// URLからレコードIDを取得
+	recordID := r.PathValue("record_id")
+	if recordID == "" {
+		http.Error(w, "Record ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// IDが有効なUUIDかチェック
+	id, err := uuid.Parse(recordID)
+	if err != nil {
+		http.Error(w, "Invalid UUID format", http.StatusBadRequest)
+		return
+	}
+
+	// 更新前にレコードが存在するかつ指定プロジェクトのものかを確認
+	existingRecord, err := s.store.GetRecord(r.Context(), id)
+	if err != nil {
+		if err.Error() == "record not found" {
+			http.Error(w, "Record not found", http.StatusNotFound)
+		} else {
+			log.Printf("Error retrieving record: %v", err)
+			http.Error(w, "Failed to retrieve record", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// レコードが指定されたプロジェクトのものかチェック
+	if existingRecord.Project != projectName {
+		http.Error(w, "Record not found in this project", http.StatusNotFound)
+		return
+	}
+
+	// リクエストボディからデータを読み込み
+	var reqBody struct {
+		Project   *string  `json:"project"`   // プロジェクト名, 省略可能
+		Timestamp *string  `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
+		Value     *int     `json:"value"`     // レコードの値, 省略可能
+		Tags      []string `json:"tags"`      // タグ一覧, 省略可能（nilの場合は既存のタグを保持）
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// 更新用のレコードを既存レコードをベースに作成
+	updatedRecord := *existingRecord
+
+	// projectの更新（指定されている場合）
+	if reqBody.Project != nil {
+		updatedRecord.Project = *reqBody.Project
+	}
+
+	// timestampの更新（指定されている場合）
+	if reqBody.Timestamp != nil {
+		timestamp, err := time.Parse(time.RFC3339, *reqBody.Timestamp)
+		if err != nil {
+			http.Error(w, "Invalid datetime format. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
+			return
+		}
+		updatedRecord.Timestamp = timestamp
+	}
+
+	// valueの更新（指定されている場合）
+	if reqBody.Value != nil {
+		if *reqBody.Value < 1 {
+			http.Error(w, "Value must be a positive integer greater than 0", http.StatusBadRequest)
+			return
+		}
+		updatedRecord.Value = *reqBody.Value
+	}
+
+	// tagsの更新（JSONで明示的に指定されている場合のみ）
+	// nil の場合は既存のタグを保持、空配列の場合はタグをクリア
+	if reqBody.Tags != nil {
+		updatedRecord.Tags = reqBody.Tags
+	}
+
+	// レコードの更新
+	if err := s.store.UpdateRecord(r.Context(), &updatedRecord); err != nil {
+		if err.Error() == "record not found" {
+			http.Error(w, "Record not found", http.StatusNotFound)
+		} else {
+			log.Printf("Error updating record: %v", err)
+			http.Error(w, "Failed to update record", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// 更新成功のレスポンスを返却
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&updatedRecord); err != nil {
 		log.Printf("Error encoding response: %v", err)
 	}
 }

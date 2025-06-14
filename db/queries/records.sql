@@ -50,5 +50,12 @@ DELETE FROM records WHERE project = ?;
 -- name: DeleteRecordsUntil :execresult
 DELETE FROM records WHERE timestamp < ?;
 
+-- name: UpdateRecord :execresult
+UPDATE records SET project = ?, value = ?, timestamp = ?
+WHERE id = ?;
+
+-- name: DeleteRecordTags :exec
+DELETE FROM tags WHERE record_id = ?;
+
 -- name: DeleteRecordsUntilByProject :execresult
 DELETE FROM records WHERE project = ? AND timestamp < ?;

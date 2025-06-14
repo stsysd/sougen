@@ -65,6 +65,15 @@ func (q *Queries) DeleteRecord(ctx context.Context, id string) (sql.Result, erro
 	return q.db.ExecContext(ctx, deleteRecord, id)
 }
 
+const deleteRecordTags = `-- name: DeleteRecordTags :exec
+DELETE FROM tags WHERE record_id = ?
+`
+
+func (q *Queries) DeleteRecordTags(ctx context.Context, recordID string) error {
+	_, err := q.db.ExecContext(ctx, deleteRecordTags, recordID)
+	return err
+}
+
 const deleteRecordsUntil = `-- name: DeleteRecordsUntil :execresult
 DELETE FROM records WHERE timestamp < ?
 `
@@ -260,4 +269,25 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateRecord = `-- name: UpdateRecord :execresult
+UPDATE records SET project = ?, value = ?, timestamp = ?
+WHERE id = ?
+`
+
+type UpdateRecordParams struct {
+	Project   string `db:"project" json:"project"`
+	Value     int64  `db:"value" json:"value"`
+	Timestamp string `db:"timestamp" json:"timestamp"`
+	ID        string `db:"id" json:"id"`
+}
+
+func (q *Queries) UpdateRecord(ctx context.Context, arg UpdateRecordParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, updateRecord,
+		arg.Project,
+		arg.Value,
+		arg.Timestamp,
+		arg.ID,
+	)
 }

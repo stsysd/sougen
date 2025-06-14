@@ -22,6 +22,8 @@ type RecordStore interface {
 	CreateRecord(ctx context.Context, record *model.Record) error
 	// GetRecord は指定されたIDのレコードを取得します。
 	GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error)
+	// UpdateRecord は指定されたIDのレコードを更新します。
+	UpdateRecord(ctx context.Context, record *model.Record) error
 	// DeleteRecord は指定されたIDのレコードを削除します。
 	DeleteRecord(ctx context.Context, id uuid.UUID) error
 	// DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
@@ -31,7 +33,7 @@ type RecordStore interface {
 	// ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
 	ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error)
 	// ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
-  ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error)
+	ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error)
 	// GetProjectInfo は指定されたプロジェクトの情報を取得します。
 	GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error)
 	// Close はストアの接続を閉じます。
@@ -134,6 +136,80 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 	return nil
 }
 
+// UpdateRecord は指定されたIDのレコードを更新します。
+func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) error {
+	// バリデーション
+	if err := record.Validate(); err != nil {
+		return err
+	}
+
+	// トランザクションの開始
+	tx, err := s.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// トランザクションをロールバックするための遅延関数
+	defer func() {
+		if tx != nil {
+			tx.Rollback() // 成功した場合は既にnilになっているためエラーは無視
+		}
+	}()
+
+	// 日時をRFC3339形式に統一して更新
+	formattedTime := record.Timestamp.Format(time.RFC3339)
+
+	// sqlcで生成されたクエリを使用（トランザクション内で）
+	queriesWithTx := s.queries.WithTx(tx)
+
+	// レコードの基本情報を更新
+	result, err := queriesWithTx.UpdateRecord(ctx, db.UpdateRecordParams{
+		Project:   record.Project,
+		Value:     int64(record.Value),
+		Timestamp: formattedTime,
+		ID:        record.ID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update record: %w", err)
+	}
+
+	// 更新された行数を確認
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// レコードが見つからない場合
+	if rowsAffected == 0 {
+		return errors.New("record not found")
+	}
+
+	// 既存のタグを削除
+	err = queriesWithTx.DeleteRecordTags(ctx, record.ID.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete existing tags: %w", err)
+	}
+
+	// 新しいタグを個別に挿入
+	for _, tag := range record.Tags {
+		err = queriesWithTx.CreateRecordTag(ctx, db.CreateRecordTagParams{
+			RecordID: record.ID.String(),
+			Tag:      tag,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create tag %s: %w", tag, err)
+		}
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	tx = nil // コミットが成功したのでnilにして遅延関数でのロールバックを防ぐ
+
+	return nil
+}
+
 // GetRecord は指定されたIDのレコードを取得します。
 func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error) {
 	// sqlcで生成されたクエリを使用
@@ -182,7 +258,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 	dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
 		Timestamp:   fromStr,
 		Timestamp_2: toStr,
-		Project:  project,
+		Project:     project,
 	})
 	if err != nil {
 		return nil, err
@@ -405,8 +481,8 @@ func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, project string, un
 	} else {
 		// 特定プロジェクトのレコードを削除
 		result, err = queriesWithTx.DeleteRecordsUntilByProject(ctx, db.DeleteRecordsUntilByProjectParams{
-			Project: project,
-			Timestamp:  untilStr,
+			Project:   project,
+			Timestamp: untilStr,
 		})
 	}
 

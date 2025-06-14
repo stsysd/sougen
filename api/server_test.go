@@ -25,9 +25,9 @@ const testAPIKey = "test-api-key"
 // テスト用の設定を生成するヘルパー関数
 func newTestConfig() *config.Config {
 	return &config.Config{
-		DataDir:  "./testdata",
-		Port:     "8080",
-		APIKey: testAPIKey,
+		DataDir: "./testdata",
+		Port:    "8080",
+		APIKey:  testAPIKey,
 	}
 }
 
@@ -56,6 +56,18 @@ func (m *MockRecordStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.R
 		return nil, fmt.Errorf("record not found")
 	}
 	return record, nil
+}
+
+func (m *MockRecordStore) UpdateRecord(ctx context.Context, record *model.Record) error {
+	if err := record.Validate(); err != nil {
+		return err
+	}
+	_, exists := m.records[record.ID.String()]
+	if !exists {
+		return fmt.Errorf("record not found")
+	}
+	m.records[record.ID.String()] = record
+	return nil
 }
 
 func (m *MockRecordStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
@@ -1544,39 +1556,39 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 	mockStore.CreateRecord(context.Background(), record4)
 
 	tests := []struct {
-		name         string
-		tagsFilter   string
-		expectedIDs  []uuid.UUID
+		name          string
+		tagsFilter    string
+		expectedIDs   []uuid.UUID
 		expectedCount int
 	}{
 		{
-			name:         "Filter by work tag",
-			tagsFilter:   "work",
-			expectedIDs:  []uuid.UUID{record1.ID, record3.ID},
+			name:          "Filter by work tag",
+			tagsFilter:    "work",
+			expectedIDs:   []uuid.UUID{record1.ID, record3.ID},
 			expectedCount: 2,
 		},
 		{
-			name:         "Filter by personal tag",
-			tagsFilter:   "personal",
-			expectedIDs:  []uuid.UUID{record2.ID, record4.ID},
+			name:          "Filter by personal tag",
+			tagsFilter:    "personal",
+			expectedIDs:   []uuid.UUID{record2.ID, record4.ID},
 			expectedCount: 2,
 		},
 		{
-			name:         "Filter by urgent tag (OR)",
-			tagsFilter:   "urgent",
-			expectedIDs:  []uuid.UUID{record1.ID, record4.ID},
+			name:          "Filter by urgent tag (OR)",
+			tagsFilter:    "urgent",
+			expectedIDs:   []uuid.UUID{record1.ID, record4.ID},
 			expectedCount: 2,
 		},
 		{
-			name:         "Filter by multiple tags (OR)",
-			tagsFilter:   "work,hobby",
-			expectedIDs:  []uuid.UUID{record1.ID, record2.ID, record3.ID},
+			name:          "Filter by multiple tags (OR)",
+			tagsFilter:    "work,hobby",
+			expectedIDs:   []uuid.UUID{record1.ID, record2.ID, record3.ID},
 			expectedCount: 3,
 		},
 		{
-			name:         "Filter by non-existent tag",
-			tagsFilter:   "nonexistent",
-			expectedIDs:  []uuid.UUID{},
+			name:          "Filter by non-existent tag",
+			tagsFilter:    "nonexistent",
+			expectedIDs:   []uuid.UUID{},
 			expectedCount: 0,
 		},
 	}
