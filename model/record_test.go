@@ -14,7 +14,8 @@ func TestNewRecord(t *testing.T) {
 	value := 1
 
 	// レコードを生成
-	record, err := NewRecord(timestamp, project, value)
+	tags := []string{"test", "example"}
+	record, err := NewRecord(timestamp, project, value, tags)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -36,6 +37,11 @@ func TestNewRecord(t *testing.T) {
 	if record.Value != value {
 		t.Errorf("Expected Value to be %d, got %d", value, record.Value)
 	}
+
+	// Tagsフィールドが正しく設定されていることを確認
+	if len(record.Tags) != 2 || record.Tags[0] != "test" || record.Tags[1] != "example" {
+		t.Errorf("Expected Tags to be %v, got %v", tags, record.Tags)
+	}
 }
 
 func TestValidate(t *testing.T) {
@@ -45,6 +51,7 @@ func TestValidate(t *testing.T) {
 		time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local),
 		"exercise",
 		1,
+		[]string{"valid"},
 	); err != nil {
 		t.Fatalf("Failed to create valid record: %v", err)
 	}
@@ -55,6 +62,7 @@ func TestValidate(t *testing.T) {
 		time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local),
 		"exercise",
 		1,
+		[]string{},
 	); err == nil {
 		t.Error("Expected error for empty ID, got nil")
 	}

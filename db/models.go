@@ -10,3 +10,8 @@ type Record struct {
 	Value     int64  `db:"value" json:"value"`
 	Timestamp string `db:"timestamp" json:"timestamp"`
 }
+
+type Tag struct {
+	RecordID string `db:"record_id" json:"record_id"`
+	Tag      string `db:"tag" json:"tag"`
+}

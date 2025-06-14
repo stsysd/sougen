@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const createRecord = `-- name: CreateRecord :exec
@@ -29,6 +30,21 @@ func (q *Queries) CreateRecord(ctx context.Context, arg CreateRecordParams) erro
 		arg.Value,
 		arg.Timestamp,
 	)
+	return err
+}
+
+const createRecordTag = `-- name: CreateRecordTag :exec
+INSERT INTO tags (record_id, tag)
+VALUES (?, ?)
+`
+
+type CreateRecordTagParams struct {
+	RecordID string `db:"record_id" json:"record_id"`
+	Tag      string `db:"tag" json:"tag"`
+}
+
+func (q *Queries) CreateRecordTag(ctx context.Context, arg CreateRecordTagParams) error {
+	_, err := q.db.ExecContext(ctx, createRecordTag, arg.RecordID, arg.Tag)
 	return err
 }
 
@@ -117,6 +133,35 @@ func (q *Queries) GetRecord(ctx context.Context, id string) (Record, error) {
 	return i, err
 }
 
+const getRecordTags = `-- name: GetRecordTags :many
+SELECT tag
+FROM tags
+WHERE record_id = ?
+`
+
+func (q *Queries) GetRecordTags(ctx context.Context, recordID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getRecordTags, recordID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		items = append(items, tag)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecords = `-- name: ListRecords :many
 SELECT id, project, value, timestamp
 FROM records
@@ -133,6 +178,64 @@ type ListRecordsParams struct {
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Record, error) {
 	rows, err := q.db.QueryContext(ctx, listRecords, arg.Timestamp, arg.Timestamp_2, arg.Project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Record{}
+	for rows.Next() {
+		var i Record
+		if err := rows.Scan(
+			&i.ID,
+			&i.Project,
+			&i.Value,
+			&i.Timestamp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecordsWithTags = `-- name: ListRecordsWithTags :many
+SELECT DISTINCT r.id, r.project, r.value, r.timestamp
+FROM records r
+JOIN tags t ON r.id = t.record_id
+WHERE r.timestamp BETWEEN ? AND ? AND r.project = ? AND t.tag IN (/*SLICE:tags*/?)
+ORDER BY r.timestamp
+`
+
+type ListRecordsWithTagsParams struct {
+	Timestamp   string   `db:"timestamp" json:"timestamp"`
+	Timestamp_2 string   `db:"timestamp_2" json:"timestamp_2"`
+	Project     string   `db:"project" json:"project"`
+	Tags        []string `db:"tags" json:"tags"`
+}
+
+// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
+// Returns records that have any of the specified tags
+func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]Record, error) {
+	query := listRecordsWithTags
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.Timestamp)
+	queryParams = append(queryParams, arg.Timestamp_2)
+	queryParams = append(queryParams, arg.Project)
+	if len(arg.Tags) > 0 {
+		for _, v := range arg.Tags {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:tags*/?", strings.Repeat(",?", len(arg.Tags))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:tags*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

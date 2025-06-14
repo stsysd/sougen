@@ -84,6 +84,38 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, project string, from,
 	return records, nil
 }
 
+func (m *MockRecordStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error) {
+	var records []*model.Record
+
+	for _, r := range m.records {
+		if r.Project == project && !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
+			// タグフィルタチェック（OR条件）
+			tagMatch := false
+			for _, filterTag := range tags {
+				for _, recordTag := range r.Tags {
+					if recordTag == filterTag {
+						tagMatch = true
+						break
+					}
+				}
+				if tagMatch {
+					break
+				}
+			}
+			if tagMatch {
+				records = append(records, r)
+			}
+		}
+	}
+
+	// Timestampの昇順にソート（SQLiteの実装と同様に）
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Timestamp.Before(records[j].Timestamp)
+	})
+
+	return records, nil
+}
+
 func (m *MockRecordStore) Close() error {
 	return nil
 }
@@ -423,7 +455,7 @@ func TestGetRecordEndpoint(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, projectName, 1)
+	testRecord, err := model.NewRecord(timestamp, projectName, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -509,7 +541,7 @@ func TestGetRecordFromWrongProject(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, correctProject, 1)
+	testRecord, err := model.NewRecord(timestamp, correctProject, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -542,7 +574,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, projectName, 1)
+	testRecord, err := model.NewRecord(timestamp, projectName, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -607,7 +639,7 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, correctProject, 1)
+	testRecord, err := model.NewRecord(timestamp, correctProject, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -646,22 +678,22 @@ func TestGetGraphEndpoint(t *testing.T) {
 
 	// テスト用のレコードを作成 - 同じ日付で複数レコード
 	timestamp1 := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(timestamp1, projectName, 3)
+	record1, _ := model.NewRecord(timestamp1, projectName, 3, nil)
 	mockStore.CreateRecord(context.Background(), record1)
 
 	// 同じ日の別の時間のレコード
 	timestamp2 := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(timestamp2, projectName, 2)
+	record2, _ := model.NewRecord(timestamp2, projectName, 2, nil)
 	mockStore.CreateRecord(context.Background(), record2)
 
 	// 別の日のレコード
 	timestamp3 := time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(timestamp3, projectName, 1)
+	record3, _ := model.NewRecord(timestamp3, projectName, 1, nil)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別プロジェクトのレコード (グラフに含まれないはず)
 	timestamp4 := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, "another_project", 5)
+	record4, _ := model.NewRecord(timestamp4, "another_project", 5, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -770,20 +802,20 @@ func TestListRecordsEndpoint(t *testing.T) {
 
 	// テスト用のレコードを複数作成
 	timestamp1 := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(timestamp1, projectName, 1)
+	record1, _ := model.NewRecord(timestamp1, projectName, 1, nil)
 	mockStore.CreateRecord(context.Background(), record1)
 
 	timestamp2 := time.Date(2025, 5, 21, 12, 0, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(timestamp2, projectName, 2)
+	record2, _ := model.NewRecord(timestamp2, projectName, 2, nil)
 	mockStore.CreateRecord(context.Background(), record2)
 
 	timestamp3 := time.Date(2025, 5, 22, 14, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(timestamp3, projectName, 3)
+	record3, _ := model.NewRecord(timestamp3, projectName, 3, nil)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別のプロジェクトのレコード（取得されないはず）
 	timestamp4 := time.Date(2025, 5, 23, 16, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, "another-project", 4)
+	record4, _ := model.NewRecord(timestamp4, "another-project", 4, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -861,7 +893,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		recordTime := baseTime.Add(time.Duration(i) * time.Hour)
-		record, _ := model.NewRecord(recordTime, projectName, i+1)
+		record, _ := model.NewRecord(recordTime, projectName, i+1, nil)
 		mockStore.CreateRecord(context.Background(), record)
 		allRecords = append(allRecords, record)
 	}
@@ -959,20 +991,20 @@ func TestGetProject(t *testing.T) {
 	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(timestamp, "test", 10)
+	rec1, err := model.NewRecord(timestamp, "test", 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec1.ID.String()] = rec1
 
-	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec2.ID.String()] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(timestamp, "another", 20)
+	rec3, err := model.NewRecord(timestamp, "another", 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1035,20 +1067,20 @@ func TestDeleteProject(t *testing.T) {
 	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(timestamp, "test", 10)
+	rec1, err := model.NewRecord(timestamp, "test", 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec1.ID.String()] = rec1
 
-	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.records[rec2.ID.String()] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(timestamp, "another", 20)
+	rec3, err := model.NewRecord(timestamp, "another", 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1108,7 +1140,7 @@ func TestHandleGetGraph(t *testing.T) {
 
 	// テスト用のレコードを作成
 	now := time.Now()
-	record1, err := model.NewRecord(now.AddDate(0, 0, -7), projectName, 5)
+	record1, err := model.NewRecord(now.AddDate(0, 0, -7), projectName, 5, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -1314,14 +1346,14 @@ func TestBulkDeleteRecords(t *testing.T) {
 			// project1のレコードを作成（5件）
 			for i := 0; i < 5; i++ {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
-				record, _ := model.NewRecord(recordTime, project1, i+1)
+				record, _ := model.NewRecord(recordTime, project1, i+1, nil)
 				mockStore.CreateRecord(context.Background(), record)
 			}
 
 			// project2のレコードを作成（3件）
 			for i := 0; i < 3; i++ {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
-				record, _ := model.NewRecord(recordTime, project2, i+10)
+				record, _ := model.NewRecord(recordTime, project2, i+10, nil)
 				mockStore.CreateRecord(context.Background(), record)
 			}
 
@@ -1401,5 +1433,232 @@ func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
 				t.Errorf("Expected status %d, got %d", tc.expectedStatus, w.Code)
 			}
 		})
+	}
+}
+
+// TestCreateRecordWithTags はタグ付きレコード作成のテスト
+func TestCreateRecordWithTags(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// リクエストボディ
+	requestBody := map[string]interface{}{
+		"timestamp": "2025-05-21T14:30:00Z",
+		"value":     5,
+		"tags":      []string{"work", "important", "urgent"},
+	}
+
+	jsonBody, _ := json.Marshal(requestBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/test-project/r", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// レスポンスの検証
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	var responseRecord model.Record
+	if err := json.NewDecoder(w.Body).Decode(&responseRecord); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// タグが正しく設定されているかチェック
+	expectedTags := []string{"work", "important", "urgent"}
+	if len(responseRecord.Tags) != len(expectedTags) {
+		t.Errorf("Expected %d tags, got %d", len(expectedTags), len(responseRecord.Tags))
+	}
+
+	for i, expectedTag := range expectedTags {
+		if i >= len(responseRecord.Tags) || responseRecord.Tags[i] != expectedTag {
+			t.Errorf("Expected tag[%d] to be %s, got %s", i, expectedTag, responseRecord.Tags[i])
+		}
+	}
+
+	// ストアに正しく保存されているかチェック
+	storedRecord, err := mockStore.GetRecord(context.Background(), responseRecord.ID)
+	if err != nil {
+		t.Fatalf("Failed to get stored record: %v", err)
+	}
+
+	if len(storedRecord.Tags) != len(expectedTags) {
+		t.Errorf("Stored record: Expected %d tags, got %d", len(expectedTags), len(storedRecord.Tags))
+	}
+}
+
+// TestCreateRecordWithEmptyTags は空タグ配列でのレコード作成のテスト
+func TestCreateRecordWithEmptyTags(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// リクエストボディ（空のタグ配列）
+	requestBody := map[string]interface{}{
+		"timestamp": "2025-05-21T14:30:00Z",
+		"value":     3,
+		"tags":      []string{},
+	}
+
+	jsonBody, _ := json.Marshal(requestBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/test-project/r", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	var responseRecord model.Record
+	if err := json.NewDecoder(w.Body).Decode(&responseRecord); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// 空のタグ配列が正しく処理されているかチェック
+	if len(responseRecord.Tags) != 0 {
+		t.Errorf("Expected 0 tags, got %d", len(responseRecord.Tags))
+	}
+}
+
+// TestListRecordsWithTagsFilter はタグフィルタでのレコード取得のテスト
+func TestListRecordsWithTagsFilter(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	projectName := "test-project"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// 異なるタグを持つレコードを作成
+	record1, _ := model.NewRecord(baseTime, projectName, 1, []string{"work", "urgent"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectName, 2, []string{"personal", "hobby"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), projectName, 3, []string{"work", "meeting"})
+	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), projectName, 4, []string{"personal", "urgent"})
+
+	mockStore.CreateRecord(context.Background(), record1)
+	mockStore.CreateRecord(context.Background(), record2)
+	mockStore.CreateRecord(context.Background(), record3)
+	mockStore.CreateRecord(context.Background(), record4)
+
+	tests := []struct {
+		name         string
+		tagsFilter   string
+		expectedIDs  []uuid.UUID
+		expectedCount int
+	}{
+		{
+			name:         "Filter by work tag",
+			tagsFilter:   "work",
+			expectedIDs:  []uuid.UUID{record1.ID, record3.ID},
+			expectedCount: 2,
+		},
+		{
+			name:         "Filter by personal tag",
+			tagsFilter:   "personal",
+			expectedIDs:  []uuid.UUID{record2.ID, record4.ID},
+			expectedCount: 2,
+		},
+		{
+			name:         "Filter by urgent tag (OR)",
+			tagsFilter:   "urgent",
+			expectedIDs:  []uuid.UUID{record1.ID, record4.ID},
+			expectedCount: 2,
+		},
+		{
+			name:         "Filter by multiple tags (OR)",
+			tagsFilter:   "work,hobby",
+			expectedIDs:  []uuid.UUID{record1.ID, record2.ID, record3.ID},
+			expectedCount: 3,
+		},
+		{
+			name:         "Filter by non-existent tag",
+			tagsFilter:   "nonexistent",
+			expectedIDs:  []uuid.UUID{},
+			expectedCount: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url := fmt.Sprintf("/api/v0/p/%s/r?tags=%s", projectName, tc.tagsFilter)
+			req := httptest.NewRequest(http.MethodGet, url, nil)
+			req.Header.Set("X-API-Key", testAPIKey)
+
+			w := httptest.NewRecorder()
+			server.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+			}
+
+			var records []*model.Record
+			if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			if len(records) != tc.expectedCount {
+				t.Errorf("Expected %d records, got %d", tc.expectedCount, len(records))
+			}
+
+			// IDが期待されるものと一致するかチェック
+			actualIDs := make(map[uuid.UUID]bool)
+			for _, record := range records {
+				actualIDs[record.ID] = true
+			}
+
+			for _, expectedID := range tc.expectedIDs {
+				if !actualIDs[expectedID] {
+					t.Errorf("Expected record with ID %s not found in results", expectedID)
+				}
+			}
+		})
+	}
+}
+
+// TestGetGraphWithTagsFilter はタグフィルタでのヒートマップ生成のテスト
+func TestGetGraphWithTagsFilter(t *testing.T) {
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	projectName := "test-project"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// 異なるタグを持つレコードを作成
+	record1, _ := model.NewRecord(baseTime, projectName, 5, []string{"work"})
+	record2, _ := model.NewRecord(baseTime.Add(24*time.Hour), projectName, 3, []string{"personal"})
+	record3, _ := model.NewRecord(baseTime.Add(48*time.Hour), projectName, 7, []string{"work"})
+
+	mockStore.CreateRecord(context.Background(), record1)
+	mockStore.CreateRecord(context.Background(), record2)
+	mockStore.CreateRecord(context.Background(), record3)
+
+	// workタグでフィルタしたヒートマップ生成
+	url := fmt.Sprintf("/p/%s/graph.svg?tags=work", projectName)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/svg+xml" {
+		t.Errorf("Expected Content-Type 'image/svg+xml', got '%s'", contentType)
+	}
+
+	svgContent := w.Body.String()
+	if len(svgContent) == 0 {
+		t.Error("Expected non-empty SVG content")
+	}
+
+	// SVGの基本構造チェック
+	if !strings.Contains(svgContent, "<svg") {
+		t.Error("Response does not contain SVG tag")
 	}
 }

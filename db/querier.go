@@ -11,14 +11,19 @@ import (
 
 type Querier interface {
 	CreateRecord(ctx context.Context, arg CreateRecordParams) error
+	CreateRecordTag(ctx context.Context, arg CreateRecordTagParams) error
 	DeleteProject(ctx context.Context, project string) error
 	DeleteRecord(ctx context.Context, id string) (sql.Result, error)
 	DeleteRecordsUntil(ctx context.Context, timestamp string) (sql.Result, error)
 	DeleteRecordsUntilByProject(ctx context.Context, arg DeleteRecordsUntilByProjectParams) (sql.Result, error)
 	GetProjectInfo(ctx context.Context, project string) (GetProjectInfoRow, error)
 	GetRecord(ctx context.Context, id string) (Record, error)
+	GetRecordTags(ctx context.Context, recordID string) ([]string, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 	ListRecords(ctx context.Context, arg ListRecordsParams) ([]Record, error)
+	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
+	// Returns records that have any of the specified tags
+	ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]Record, error)
 }
 
 var _ Querier = (*Queries)(nil)

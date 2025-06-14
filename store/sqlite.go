@@ -30,6 +30,8 @@ type RecordStore interface {
 	DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error)
 	// ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
 	ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error)
+	// ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
+  ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error)
 	// GetProjectInfo は指定されたプロジェクトの情報を取得します。
 	GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error)
 	// Close はストアの接続を閉じます。
@@ -81,8 +83,18 @@ func initTables(conn *sql.DB) error {
 			timestamp TEXT NOT NULL
 		);
 		
+		CREATE TABLE IF NOT EXISTS tags (
+			record_id TEXT NOT NULL,
+			tag TEXT NOT NULL,
+			PRIMARY KEY (record_id, tag),
+			FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+		);
+		
 		CREATE INDEX IF NOT EXISTS idx_records_project_timestamp 
 		ON records(project, timestamp);
+		
+		CREATE INDEX IF NOT EXISTS idx_tags_record_id ON tags(record_id);
+		CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
 	`)
 	return err
 }
@@ -98,12 +110,28 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 	formattedTime := record.Timestamp.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
-	return s.queries.CreateRecord(ctx, db.CreateRecordParams{
-		ID:      record.ID.String(),
-		Project: record.Project,
-		Value:   int64(record.Value),
-		Timestamp:  formattedTime,
+	err := s.queries.CreateRecord(ctx, db.CreateRecordParams{
+		ID:        record.ID.String(),
+		Project:   record.Project,
+		Value:     int64(record.Value),
+		Timestamp: formattedTime,
 	})
+	if err != nil {
+		return err
+	}
+
+	// タグを個別に挿入
+	for _, tag := range record.Tags {
+		err = s.queries.CreateRecordTag(ctx, db.CreateRecordTagParams{
+			RecordID: record.ID.String(),
+			Tag:      tag,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create tag %s: %w", tag, err)
+		}
+	}
+
+	return nil
 }
 
 // GetRecord は指定されたIDのレコードを取得します。
@@ -129,8 +157,14 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 		return nil, fmt.Errorf("invalid UUID in database: %w", err)
 	}
 
+	// タグを取得
+	tags, err := s.queries.GetRecordTags(ctx, dbRecord.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get record tags: %w", err)
+	}
+
 	// レコードの作成
-	return model.LoadRecord(recordID, timestamp, dbRecord.Project, int(dbRecord.Value))
+	return model.LoadRecord(recordID, timestamp, dbRecord.Project, int(dbRecord.Value), tags)
 }
 
 // ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
@@ -169,8 +203,68 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 			return nil, fmt.Errorf("invalid UUID in database: %w", err)
 		}
 
+		// タグを取得
+		tags, err := s.queries.GetRecordTags(ctx, dbRecord.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get record tags: %w", err)
+		}
+
 		// レコードの作成
-		record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value))
+		record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), tags)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+
+	return records, nil
+}
+
+// ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
+func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error) {
+	// 日付の範囲を丸一日に設定（秒以下の精度を取り除く）
+	// fromは日付の始まりに設定
+	fromDate := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
+	fromStr := fromDate.Format(time.RFC3339)
+
+	// toは日付の終わりに設定（次の日の0時の直前）
+	toDate := time.Date(to.Year(), to.Month(), to.Day(), 23, 59, 59, 999999999, to.Location())
+	toStr := toDate.Format(time.RFC3339)
+
+	// sqlcで生成されたクエリを使用
+	dbRecords, err := s.queries.ListRecordsWithTags(ctx, db.ListRecordsWithTagsParams{
+		Timestamp:   fromStr,
+		Timestamp_2: toStr,
+		Project:     project,
+		Tags:        tags,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// 結果の変換
+	var records []*model.Record
+	for _, dbRecord := range dbRecords {
+		// 文字列から時間に変換
+		timestamp, err := time.Parse(time.RFC3339, dbRecord.Timestamp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse record date: %w", err)
+		}
+
+		// UUID の解析
+		id, err := uuid.Parse(dbRecord.ID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid UUID in database: %w", err)
+		}
+
+		// タグを取得
+		recordTags, err := s.queries.GetRecordTags(ctx, dbRecord.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get record tags: %w", err)
+		}
+
+		// レコードの作成
+		record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), recordTags)
 		if err != nil {
 			return nil, err
 		}
