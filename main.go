@@ -13,11 +13,6 @@ func main() {
 	// 設定の読み込み
 	cfg := config.NewConfig()
 
-	// API認証トークンのチェック
-	if cfg.APIToken == "" {
-		log.Println("WARNING: No API token set (SOUGEN_API_TOKEN). API will not be secure!")
-	}
-
 	// SQLiteストアの初期化
 	sqliteStore, err := store.NewSQLiteStore(cfg.DataDir)
 	if err != nil {
