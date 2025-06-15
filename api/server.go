@@ -2,7 +2,6 @@
 package api
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/stsysd/sougen/config"
@@ -145,21 +143,6 @@ func NewCreateRecordParams(r *http.Request) (*CreateRecordParams, error) {
 
 // handleCreateRecord はレコード作成エンドポイントのハンドラーです。
 func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
-	// テンプレートクエリパラメータを取得
-	templateParam := r.URL.Query().Get("template")
-
-	// テンプレートパラメータが指定されている場合、元のボディを変換
-	if templateParam != "" && r.ContentLength > 0 {
-		transformedBody, err := s.transformRequestBody(r.Body, templateParam)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Template transformation failed: %v", err), http.StatusBadRequest)
-			return
-		}
-		// 変換されたボディでリクエストを再構築
-		r.Body = io.NopCloser(strings.NewReader(transformedBody))
-		r.ContentLength = int64(len(transformedBody))
-	}
-
 	// パラメータを検証
 	params, err := NewCreateRecordParams(r)
 	if err != nil {
@@ -959,34 +942,6 @@ func parseInt(s string) (int, error) {
 	return value, nil
 }
 
-// transformRequestBody はGoテンプレートを使用してリクエストボディを変換します。
-func (s *Server) transformRequestBody(body io.Reader, templateStr string) (string, error) {
-	// リクエストボディを読み取り
-	bodyBytes, err := io.ReadAll(body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	// 元のJSONをmapとしてパース
-	var originalData map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &originalData); err != nil {
-		return "", fmt.Errorf("failed to parse original JSON: %w", err)
-	}
-
-	// Goテンプレートをパース
-	tmpl, err := template.New("transform").Parse(templateStr)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
-	}
-
-	// テンプレートを実行してデータを変換
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, originalData); err != nil {
-		return "", fmt.Errorf("failed to execute template: %w", err)
-	}
-
-	return buf.String(), nil
-}
 
 // Run はサーバーを指定されたアドレスで起動します。
 func (s *Server) Run(addr string) error {
