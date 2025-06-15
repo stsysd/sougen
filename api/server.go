@@ -10,11 +10,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"text/template"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stsysd/sougen/config"
 	"github.com/stsysd/sougen/heatmap"
 	"github.com/stsysd/sougen/model"
@@ -92,77 +92,78 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleCreateRecord はレコード作成エンドポイントのハンドラーです。
-func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
-		return
+// CreateRecordParams represents parameters for creating a record.
+type CreateRecordParams struct {
+	ProjectName *model.ProjectName
+	Timestamp   *model.Timestamp
+	Value       *model.Value
+	Tags        []string
+}
+
+// NewCreateRecordParams creates parameters for record creation from HTTP request.
+func NewCreateRecordParams(r *http.Request) (*CreateRecordParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
 	}
 
+	// Parse request body
+	var requestBody struct {
+		Timestamp string   `json:"timestamp"`
+		Value     *int     `json:"value"`
+		Tags      []string `json:"tags"`
+	}
+
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			return nil, fmt.Errorf("invalid request body: %w", err)
+		}
+	}
+
+	timestamp, err := model.NewTimestamp(requestBody.Timestamp)
+	if err != nil {
+		return nil, err
+	}
+
+	value, err := model.NewValue(requestBody.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CreateRecordParams{
+		ProjectName: projectName,
+		Timestamp:   timestamp,
+		Value:       value,
+		Tags:        requestBody.Tags,
+	}, nil
+}
+
+// handleCreateRecord はレコード作成エンドポイントのハンドラーです。
+func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	// テンプレートクエリパラメータを取得
 	templateParam := r.URL.Query().Get("template")
 
-	// リクエストボディからデータを読み込み
-	var reqBody struct {
-		Timestamp string   `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
-		Value     *int     `json:"value"`     // レコードの値, 省略可能
-		Tags      []string `json:"tags"`      // タグ一覧, 省略可能
-	}
-
-	// リクエストボディが存在する場合はデコード
-	if r.ContentLength > 0 {
-		if templateParam != "" {
-			// テンプレートパラメータが指定されている場合、元のボディを変換
-			transformedBody, err := s.transformRequestBody(r.Body, templateParam)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Template transformation failed: %v", err), http.StatusBadRequest)
-				return
-			}
-			// 変換されたボディをデコード
-			if err := json.NewDecoder(strings.NewReader(transformedBody)).Decode(&reqBody); err != nil {
-				http.Error(w, "Invalid request body after template transformation", http.StatusBadRequest)
-				return
-			}
-		} else {
-			// 通常の処理
-			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-				http.Error(w, "Invalid request body", http.StatusBadRequest)
-				return
-			}
-		}
-	}
-
-	// timestmap の処理: 省略された場合は現在時刻を使用
-	var timestamp time.Time
-	if reqBody.Timestamp == "" {
-		// timestamp が省略された場合は現在時刻を使用
-		timestamp = time.Now()
-	} else {
-		// 文字列からtime.Timeに変換
-		var err error
-		timestamp, err = time.Parse(time.RFC3339, reqBody.Timestamp)
+	// テンプレートパラメータが指定されている場合、元のボディを変換
+	if templateParam != "" && r.ContentLength > 0 {
+		transformedBody, err := s.transformRequestBody(r.Body, templateParam)
 		if err != nil {
-			http.Error(w, "Invalid datetime format. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf("Template transformation failed: %v", err), http.StatusBadRequest)
 			return
 		}
+		// 変換されたボディでリクエストを再構築
+		r.Body = io.NopCloser(strings.NewReader(transformedBody))
+		r.ContentLength = int64(len(transformedBody))
 	}
 
-	// value の処理: 省略された場合はデフォルト値1を使用
-	if reqBody.Value == nil {
-		defaultValue := 1
-		reqBody.Value = &defaultValue
-	}
-
-	// value のチェック: 必ず1以上の整数であることを確認
-	if *reqBody.Value < 1 {
-		http.Error(w, "Value must be a positive integer greater than 0", http.StatusBadRequest)
+	// パラメータを検証
+	params, err := NewCreateRecordParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// 新しいレコードの作成
-	record, err := model.NewRecord(timestamp, projectName, *reqBody.Value, reqBody.Tags)
+	record, err := model.NewRecord(params.Timestamp.Time(), params.ProjectName.String(), params.Value.Int(), params.Tags)
 	if err != nil {
 		log.Printf("Error creating record: %v", err)
 		http.Error(w, "Failed to create record", http.StatusBadRequest)
@@ -184,31 +185,41 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetRecordParams represents parameters for getting a record.
+type GetRecordParams struct {
+	ProjectName *model.ProjectName
+	RecordID    *model.RecordID
+}
+
+// NewGetRecordParams creates parameters for record retrieval from HTTP request.
+func NewGetRecordParams(r *http.Request) (*GetRecordParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	recordID, err := model.NewRecordID(r.PathValue("record_id"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &GetRecordParams{
+		ProjectName: projectName,
+		RecordID:    recordID,
+	}, nil
+}
+
 // handleGetRecord は特定のIDのレコードを取得するハンドラーです。
 func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
-		return
-	}
-
-	// URLからレコードIDを取得
-	recordID := r.PathValue("record_id")
-	if recordID == "" {
-		http.Error(w, "Record ID is required", http.StatusBadRequest)
-		return
-	}
-
-	// IDが有効なUUIDかチェック
-	id, err := uuid.Parse(recordID)
+	// パラメータを検証
+	params, err := NewGetRecordParams(r)
 	if err != nil {
-		http.Error(w, "Invalid UUID format", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// レコードの取得
-	record, err := s.store.GetRecord(r.Context(), id)
+	record, err := s.store.GetRecord(r.Context(), params.RecordID.UUID())
 	if err != nil {
 		if err.Error() == "record not found" {
 			http.Error(w, "Record not found", http.StatusNotFound)
@@ -220,7 +231,7 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードが指定されたプロジェクトのものかチェック
-	if record.Project != projectName {
+	if record.Project != params.ProjectName.String() {
 		http.Error(w, "Record not found in this project", http.StatusNotFound)
 		return
 	}
@@ -232,31 +243,77 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// UpdateRecordParams represents parameters for updating a record.
+type UpdateRecordParams struct {
+	ProjectName *model.ProjectName
+	RecordID    *model.RecordID
+	Project     *string
+	Timestamp   *model.Timestamp
+	Value       *model.Value
+	Tags        []string
+}
+
+// NewUpdateRecordParams creates parameters for record update from HTTP request.
+func NewUpdateRecordParams(r *http.Request) (*UpdateRecordParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	recordID, err := model.NewRecordID(r.PathValue("record_id"))
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse request body
+	var requestBody struct {
+		Project   *string  `json:"project"`
+		Timestamp *string  `json:"timestamp"`
+		Value     *int     `json:"value"`
+		Tags      []string `json:"tags"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		return nil, fmt.Errorf("invalid request body: %w", err)
+	}
+
+	var timestamp *model.Timestamp
+	if requestBody.Timestamp != nil {
+		timestamp, err = model.NewTimestamp(*requestBody.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var value *model.Value
+	if requestBody.Value != nil {
+		value, err = model.NewValue(requestBody.Value)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &UpdateRecordParams{
+		ProjectName: projectName,
+		RecordID:    recordID,
+		Project:     requestBody.Project,
+		Timestamp:   timestamp,
+		Value:       value,
+		Tags:        requestBody.Tags,
+	}, nil
+}
+
 // handleUpdateRecord は特定のIDのレコードを更新するハンドラーです。
 func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
-		return
-	}
-
-	// URLからレコードIDを取得
-	recordID := r.PathValue("record_id")
-	if recordID == "" {
-		http.Error(w, "Record ID is required", http.StatusBadRequest)
-		return
-	}
-
-	// IDが有効なUUIDかチェック
-	id, err := uuid.Parse(recordID)
+	// パラメータを検証
+	params, err := NewUpdateRecordParams(r)
 	if err != nil {
-		http.Error(w, "Invalid UUID format", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// 更新前にレコードが存在するかつ指定プロジェクトのものかを確認
-	existingRecord, err := s.store.GetRecord(r.Context(), id)
+	existingRecord, err := s.store.GetRecord(r.Context(), params.RecordID.UUID())
 	if err != nil {
 		if err.Error() == "record not found" {
 			http.Error(w, "Record not found", http.StatusNotFound)
@@ -268,21 +325,8 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードが指定されたプロジェクトのものかチェック
-	if existingRecord.Project != projectName {
+	if existingRecord.Project != params.ProjectName.String() {
 		http.Error(w, "Record not found in this project", http.StatusNotFound)
-		return
-	}
-
-	// リクエストボディからデータを読み込み
-	var reqBody struct {
-		Project   *string  `json:"project"`   // プロジェクト名, 省略可能
-		Timestamp *string  `json:"timestamp"` // ISO8601形式 "2006-01-02T15:04:05Z", 省略可能
-		Value     *int     `json:"value"`     // レコードの値, 省略可能
-		Tags      []string `json:"tags"`      // タグ一覧, 省略可能（nilの場合は既存のタグを保持）
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -290,33 +334,24 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	updatedRecord := *existingRecord
 
 	// projectの更新（指定されている場合）
-	if reqBody.Project != nil {
-		updatedRecord.Project = *reqBody.Project
+	if params.Project != nil {
+		updatedRecord.Project = *params.Project
 	}
 
 	// timestampの更新（指定されている場合）
-	if reqBody.Timestamp != nil {
-		timestamp, err := time.Parse(time.RFC3339, *reqBody.Timestamp)
-		if err != nil {
-			http.Error(w, "Invalid datetime format. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
-			return
-		}
-		updatedRecord.Timestamp = timestamp
+	if params.Timestamp != nil {
+		updatedRecord.Timestamp = params.Timestamp.Time()
 	}
 
 	// valueの更新（指定されている場合）
-	if reqBody.Value != nil {
-		if *reqBody.Value < 1 {
-			http.Error(w, "Value must be a positive integer greater than 0", http.StatusBadRequest)
-			return
-		}
-		updatedRecord.Value = *reqBody.Value
+	if params.Value != nil {
+		updatedRecord.Value = params.Value.Int()
 	}
 
 	// tagsの更新（JSONで明示的に指定されている場合のみ）
 	// nil の場合は既存のタグを保持、空配列の場合はタグをクリア
-	if reqBody.Tags != nil {
-		updatedRecord.Tags = reqBody.Tags
+	if params.Tags != nil {
+		updatedRecord.Tags = params.Tags
 	}
 
 	// レコードの更新
@@ -337,31 +372,41 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// DeleteRecordParams represents parameters for deleting a record.
+type DeleteRecordParams struct {
+	ProjectName *model.ProjectName
+	RecordID    *model.RecordID
+}
+
+// NewDeleteRecordParams creates parameters for record deletion from HTTP request.
+func NewDeleteRecordParams(r *http.Request) (*DeleteRecordParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	recordID, err := model.NewRecordID(r.PathValue("record_id"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &DeleteRecordParams{
+		ProjectName: projectName,
+		RecordID:    recordID,
+	}, nil
+}
+
 // handleDeleteRecord は特定のIDのレコードを削除するハンドラーです。
 func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
-		return
-	}
-
-	// URLからレコードIDを取得
-	recordID := r.PathValue("record_id")
-	if recordID == "" {
-		http.Error(w, "Record ID is required", http.StatusBadRequest)
-		return
-	}
-
-	// IDが有効なUUIDかチェック
-	id, err := uuid.Parse(recordID)
+	// パラメータを検証
+	params, err := NewDeleteRecordParams(r)
 	if err != nil {
-		http.Error(w, "Invalid UUID format", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// 削除前にレコードが存在するかつ指定プロジェクトのものかを確認
-	record, err := s.store.GetRecord(r.Context(), id)
+	record, err := s.store.GetRecord(r.Context(), params.RecordID.UUID())
 	if err != nil {
 		if err.Error() == "record not found" {
 			http.Error(w, "Record not found", http.StatusNotFound)
@@ -373,13 +418,13 @@ func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードが指定されたプロジェクトのものかチェック
-	if record.Project != projectName {
+	if record.Project != params.ProjectName.String() {
 		http.Error(w, "Record not found in this project", http.StatusNotFound)
 		return
 	}
 
 	// レコードの削除
-	if err := s.store.DeleteRecord(r.Context(), id); err != nil {
+	if err := s.store.DeleteRecord(r.Context(), params.RecordID.UUID()); err != nil {
 		log.Printf("Error deleting record: %v", err)
 		http.Error(w, "Failed to delete record", http.StatusInternalServerError)
 		return
@@ -389,22 +434,52 @@ func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// GetGraphParams represents parameters for getting a graph.
+type GetGraphParams struct {
+	ProjectName *model.ProjectName
+	DateRange   *model.DateRange
+	Tags        *model.Tags
+	Track       bool
+}
+
+// NewGetGraphParams creates parameters for graph generation from HTTP request.
+func NewGetGraphParams(r *http.Request) (*GetGraphParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	query := r.URL.Query()
+
+	dateRange, err := model.NewDateRange(query.Get("from"), query.Get("to"))
+	if err != nil {
+		return nil, err
+	}
+
+	tags := model.NewTags(query.Get("tags"))
+	track := query.Has("track")
+
+	return &GetGraphParams{
+		ProjectName: projectName,
+		DateRange:   dateRange,
+		Tags:        tags,
+		Track:       track,
+	}, nil
+}
+
 // handleGetGraph は指定プロジェクトのヒートマップグラフを生成・返却するハンドラーです。
 func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
+	// パラメータを検証
+	params, err := NewGetGraphParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// クエリパラメータの解析（from, to）
-	query := r.URL.Query()
-
 	// アクセスカウンター機能: trackパラメータがある場合、レコードを自動作成
-	if query.Has("track") {
+	if params.Track {
 		// 新しいレコードの作成（現在時刻、値は1）
-		record, err := model.NewRecord(time.Now(), projectName, 1, nil)
+		record, err := model.NewRecord(time.Now(), params.ProjectName.String(), 1, nil)
 		if err != nil {
 			log.Printf("Error creating access counter record: %v", err)
 			// エラーが発生してもグラフ表示は続行するため、エラーレスポンスは返さない
@@ -417,65 +492,14 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// デフォルトの日付範囲を設定: 最新の週+52週間
-	defaultFrom, defaultTo := getDefaultDateRange()
-
-	// クエリパラメータからfrom日時を取得
-	fromStr := query.Get("from")
-	var fromTime time.Time
-	var err error
-	if fromStr != "" {
-		fromTime, err = time.Parse(time.RFC3339, fromStr)
-		if err != nil {
-			http.Error(w, "Invalid from parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
-			return
-		}
-	} else {
-		fromTime = defaultFrom
-	}
-
-	// クエリパラメータからto日時を取得
-	toStr := query.Get("to")
-	var toTime time.Time
-	if toStr != "" {
-		toTime, err = time.Parse(time.RFC3339, toStr)
-		if err != nil {
-			http.Error(w, "Invalid to parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
-			return
-		}
-	} else {
-		toTime = defaultTo
-	}
-
-	// tagsクエリパラメータの処理
-	tagsStr := query.Get("tags")
+	// レコードの取得
 	var records []*model.Record
-
-	if tagsStr != "" {
-		// カンマ区切りでタグを分割
-		tags := strings.Split(tagsStr, ",")
-		// 空白を削除
-		for i, tag := range tags {
-			tags[i] = strings.TrimSpace(tag)
-		}
-		// 空のタグを除去
-		var filteredTags []string
-		for _, tag := range tags {
-			if tag != "" {
-				filteredTags = append(filteredTags, tag)
-			}
-		}
-
-		if len(filteredTags) > 0 {
-			// タグフィルタありのレコード取得
-			records, err = s.store.ListRecordsWithTags(r.Context(), projectName, fromTime, toTime, filteredTags)
-		} else {
-			// タグが空の場合は通常のレコード取得
-			records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
-		}
+	if !params.Tags.IsEmpty() {
+		// タグフィルタありのレコード取得
+		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values())
 	} else {
 		// タグフィルタなしのレコード取得
-		records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To())
 	}
 
 	if err != nil {
@@ -493,8 +517,8 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// 日付範囲内のすべての日を処理するための日付の作成
 	// fromTimeとtoTimeを日付のみに切り詰め
-	fromDate := time.Date(fromTime.Year(), fromTime.Month(), fromTime.Day(), 0, 0, 0, 0, fromTime.Location())
-	toDate := time.Date(toTime.Year(), toTime.Month(), toTime.Day(), 0, 0, 0, 0, toTime.Location())
+	fromDate := time.Date(params.DateRange.From().Year(), params.DateRange.From().Month(), params.DateRange.From().Day(), 0, 0, 0, 0, params.DateRange.From().Location())
+	toDate := time.Date(params.DateRange.To().Year(), params.DateRange.To().Month(), params.DateRange.To().Day(), 0, 0, 0, 0, params.DateRange.To().Location())
 
 	// ヒートマップ用データの作成（範囲内のすべての日を含む）
 	var data []heatmap.Data
@@ -525,24 +549,12 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		FontSize:    10,
 		FontFamily:  "sans-serif",
 		Colors:      []string{"#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"},
-		ProjectName: projectName,
+		ProjectName: params.ProjectName.String(),
 	}
 
 	// tagsがある場合はタイトルに含める
-	if tagsStr != "" {
-		tags := strings.Split(tagsStr, ",")
-		// 空白を削除
-		for i, tag := range tags {
-			tags[i] = strings.TrimSpace(tag)
-		}
-		// 空のタグを除去
-		var filteredTags []string
-		for _, tag := range tags {
-			if tag != "" {
-				filteredTags = append(filteredTags, tag)
-			}
-		}
-		opts.Tags = filteredTags
+	if !params.Tags.IsEmpty() {
+		opts.Tags = params.Tags.Values()
 	}
 
 	svg := heatmap.GenerateYearlyHeatmapSVG(data, opts)
@@ -552,77 +564,60 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(svg))
 }
 
+// ListRecordsParams represents parameters for listing records.
+type ListRecordsParams struct {
+	ProjectName *model.ProjectName
+	DateRange   *model.DateRange
+	Tags        *model.Tags
+	Pagination  *model.Pagination
+}
+
+// NewListRecordsParams creates parameters for record listing from HTTP request.
+func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	query := r.URL.Query()
+
+	dateRange, err := model.NewDateRange(query.Get("from"), query.Get("to"))
+	if err != nil {
+		return nil, err
+	}
+
+	tags := model.NewTags(query.Get("tags"))
+
+	pagination, err := model.NewPagination(query.Get("limit"), query.Get("offset"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListRecordsParams{
+		ProjectName: projectName,
+		DateRange:   dateRange,
+		Tags:        tags,
+		Pagination:  pagination,
+	}, nil
+}
+
 // handleListRecords はプロジェクトに属するレコードの一覧を取得するハンドラーです。
 func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
+	// パラメータを検証
+	params, err := NewListRecordsParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// クエリパラメータの解析
-	query := r.URL.Query()
-
-	// デフォルトの日付範囲を設定: 最新の週+52週間
-	defaultFrom, defaultTo := getDefaultDateRange()
-
-	// クエリパラメータからfrom日時を取得
-	fromStr := query.Get("from")
-	var fromTime time.Time
-	var err error
-	if fromStr != "" {
-		fromTime, err = time.Parse(time.RFC3339, fromStr)
-		if err != nil {
-			http.Error(w, "Invalid from parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
-			return
-		}
-	} else {
-		fromTime = defaultFrom
-	}
-
-	// クエリパラメータからto日時を取得
-	toStr := query.Get("to")
-	var toTime time.Time
-	if toStr != "" {
-		toTime, err = time.Parse(time.RFC3339, toStr)
-		if err != nil {
-			http.Error(w, "Invalid to parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
-			return
-		}
-	} else {
-		toTime = defaultTo
-	}
-
-	// tagsクエリパラメータの処理
-	tagsStr := query.Get("tags")
+	// レコードの取得
 	var records []*model.Record
-
-	if tagsStr != "" {
-		// カンマ区切りでタグを分割
-		tags := strings.Split(tagsStr, ",")
-		// 空白を削除
-		for i, tag := range tags {
-			tags[i] = strings.TrimSpace(tag)
-		}
-		// 空のタグを除去
-		var filteredTags []string
-		for _, tag := range tags {
-			if tag != "" {
-				filteredTags = append(filteredTags, tag)
-			}
-		}
-
-		if len(filteredTags) > 0 {
-			// タグフィルタありのレコード取得
-			records, err = s.store.ListRecordsWithTags(r.Context(), projectName, fromTime, toTime, filteredTags)
-		} else {
-			// タグが空の場合は通常のレコード取得
-			records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
-		}
+	if !params.Tags.IsEmpty() {
+		// タグフィルタありのレコード取得
+		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values())
 	} else {
 		// タグフィルタなしのレコード取得
-		records, err = s.store.ListRecords(r.Context(), projectName, fromTime, toTime)
+		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To())
 	}
 
 	if err != nil {
@@ -631,54 +626,17 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ページネーションパラメータの取得
-	limit := 100 // デフォルト値
-	offset := 0  // デフォルト値
-
-	// limitパラメータの解析
-	limitStr := query.Get("limit")
-	if limitStr != "" {
-		parsedLimit, err := parseInt(limitStr)
-		if err != nil {
-			http.Error(w, "Invalid limit parameter: must be a positive integer", http.StatusBadRequest)
-			return
-		}
-		if parsedLimit <= 0 {
-			http.Error(w, "Limit must be greater than 0", http.StatusBadRequest)
-			return
-		}
-		if parsedLimit > 1000 { // 上限を設定
-			parsedLimit = 1000
-		}
-		limit = parsedLimit
-	}
-
-	// offsetパラメータの解析
-	offsetStr := query.Get("offset")
-	if offsetStr != "" {
-		parsedOffset, err := parseInt(offsetStr)
-		if err != nil {
-			http.Error(w, "Invalid offset parameter: must be a non-negative integer", http.StatusBadRequest)
-			return
-		}
-		if parsedOffset < 0 {
-			http.Error(w, "Offset must be non-negative", http.StatusBadRequest)
-			return
-		}
-		offset = parsedOffset
-	}
-
 	// ページネーションの適用
 	totalRecords := len(records)
-	endIndex := offset + limit
+	endIndex := params.Pagination.Offset() + params.Pagination.Limit()
 	if endIndex > totalRecords {
 		endIndex = totalRecords
 	}
 
 	// 指定された範囲のレコードのみを抽出
 	var pagedRecords []*model.Record
-	if offset < totalRecords {
-		pagedRecords = records[offset:endIndex]
+	if params.Pagination.Offset() < totalRecords {
+		pagedRecords = records[params.Pagination.Offset():endIndex]
 	} else {
 		pagedRecords = []*model.Record{} // offsetが範囲外の場合は空配列
 	}
@@ -690,20 +648,37 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetProjectParams represents parameters for getting project info.
+type GetProjectParams struct {
+	ProjectName *model.ProjectName
+}
+
+// NewGetProjectParams creates parameters for project retrieval from HTTP request.
+func NewGetProjectParams(r *http.Request) (*GetProjectParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &GetProjectParams{
+		ProjectName: projectName,
+	}, nil
+}
+
 // handleGetProject はプロジェクト情報取得をハンドリングします。
 func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
+	// パラメータを検証
+	params, err := NewGetProjectParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// プロジェクト情報の取得
-	projectInfo, err := s.store.GetProjectInfo(r.Context(), projectName)
+	projectInfo, err := s.store.GetProjectInfo(r.Context(), params.ProjectName.String())
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, fmt.Sprintf("Project '%s' not found", projectName), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Project '%s' not found", params.ProjectName.String()), http.StatusNotFound)
 		} else {
 			http.Error(w, fmt.Sprintf("Error retrieving project info: %v", err), http.StatusInternalServerError)
 		}
@@ -721,17 +696,34 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// DeleteProjectParams represents parameters for deleting a project.
+type DeleteProjectParams struct {
+	ProjectName *model.ProjectName
+}
+
+// NewDeleteProjectParams creates parameters for project deletion from HTTP request.
+func NewDeleteProjectParams(r *http.Request) (*DeleteProjectParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &DeleteProjectParams{
+		ProjectName: projectName,
+	}, nil
+}
+
 // handleDeleteProject はプロジェクト削除をハンドリングします。
 func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
-	// URLからプロジェクト名を取得
-	projectName := r.PathValue("project_name")
-	if projectName == "" {
-		http.Error(w, "Project name is required", http.StatusBadRequest)
+	// パラメータを検証
+	params, err := NewDeleteProjectParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// プロジェクト削除の実行
-	err := s.store.DeleteProject(r.Context(), projectName)
+	err = s.store.DeleteProject(r.Context(), params.ProjectName.String())
 	if err != nil {
 		log.Printf("Error deleting project: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -750,30 +742,43 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleBulkDeleteRecords は条件に一致するレコードをまとめて削除するハンドラーです。
-func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request) {
-	// クエリパラメータの解析
-	query := r.URL.Query()
+// BulkDeleteRecordsParams represents parameters for bulk deleting records.
+type BulkDeleteRecordsParams struct {
+	Project string
+	Until   *model.Timestamp
+}
 
-	// projectパラメータの取得（オプション）
+// NewBulkDeleteRecordsParams creates parameters for bulk record deletion from HTTP request.
+func NewBulkDeleteRecordsParams(query url.Values) (*BulkDeleteRecordsParams, error) {
 	project := query.Get("project")
 
-	// 必須パラメータ: until (この日時より前のレコードを削除)
 	untilStr := query.Get("until")
 	if untilStr == "" {
-		http.Error(w, "until parameter is required", http.StatusBadRequest)
-		return
+		return nil, fmt.Errorf("until parameter is required")
 	}
 
-	// 日時のパース
-	untilTime, err := time.Parse(time.RFC3339, untilStr)
+	until, err := model.NewTimestamp(untilStr)
 	if err != nil {
-		http.Error(w, "Invalid until parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)", http.StatusBadRequest)
+		return nil, err
+	}
+
+	return &BulkDeleteRecordsParams{
+		Project: project,
+		Until:   until,
+	}, nil
+}
+
+// handleBulkDeleteRecords は条件に一致するレコードをまとめて削除するハンドラーです。
+func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request) {
+	// パラメータを検証
+	params, err := NewBulkDeleteRecordsParams(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// レコードの一括削除を実行
-	count, err := s.store.DeleteRecordsUntil(r.Context(), project, untilTime)
+	count, err := s.store.DeleteRecordsUntil(r.Context(), params.Project, params.Until.Time())
 	if err != nil {
 		log.Printf("Error deleting records until specified date: %v", err)
 		http.Error(w, "Failed to delete records", http.StatusInternalServerError)
