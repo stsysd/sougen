@@ -9,6 +9,7 @@ import (
 )
 
 // GenerateYearlyHeatmapSVG returns an SVG string representing the yearly heatmap.
+// data should be sorted in ascending order by date.
 func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	// default options
 	if opts == nil {
@@ -82,7 +83,7 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	lastMonth := -1
 	oneDay := 24 * time.Hour
 	monthLabelY := opts.FontSize + titleHeight
-	for w := 0; w < weeks; w++ {
+	for w := range weeks {
 		x := opts.CellPadding + w*(opts.CellSize+opts.CellPadding)
 		current := firstSunday.Add(time.Duration(w*7) * oneDay)
 		if current.Day() <= 7 && int(current.Month())-1 != lastMonth {
@@ -104,8 +105,8 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	levels := len(opts.Colors)
 	ranges := opts.ValueRanges
 	useCustom := len(ranges) == levels-1
-	for w := 0; w < weeks; w++ {
-		for i := 0; i < 7; i++ {
+	for w := range weeks {
+		for i := range 7 {
 			current := firstSunday.Add(time.Duration(w*7+i) * oneDay)
 			key := current.Format("2006-01-02")
 			count, exists := countMap[key]

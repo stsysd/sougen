@@ -530,7 +530,6 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SVGの生成
-	// NOTE: Dataは昇順であることを前提としている
 	opts := &heatmap.Options{
 		CellSize:    12,
 		CellPadding: 2,
