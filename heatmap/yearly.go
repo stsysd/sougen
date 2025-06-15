@@ -27,8 +27,8 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	}
 
 	// determine date range from data (assuming data is in ascending order)
-	startDate := truncateToMidnight(data[0].Date)
-	endDate := truncateToMidnight(data[len(data)-1].Date)
+	startDate := data[0].Date
+	endDate := data[len(data)-1].Date
 
 	// map date string to count
 	countMap := make(map[string]int, len(data))
@@ -148,8 +148,3 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	return sb.String()
 }
 
-// truncateToMidnight zeroes time component
-func truncateToMidnight(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
-}

@@ -19,16 +19,6 @@ import (
 	"github.com/stsysd/sougen/store"
 )
 
-// getDefaultDateRange は最新の週+52週間のデフォルト日付範囲を計算します。
-func getDefaultDateRange() (time.Time, time.Time) {
-	now := time.Now()
-	// 今日を含む週の開始日(日曜日)を求める
-	weekday := int(now.Weekday())
-	latestWeekStart := now.AddDate(0, 0, -weekday)
-	// 52週間前から開始
-	defaultFrom := latestWeekStart.AddDate(0, 0, -52*7)
-	return defaultFrom, now
-}
 
 // Server はAPIサーバーの構造体です。
 type Server struct {
@@ -503,10 +493,8 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		dateMap[dateString] += record.Value
 	}
 
-	// 日付範囲内のすべての日を処理するための日付の作成
-	// fromTimeとtoTimeを日付のみに切り詰め
-	fromDate := time.Date(params.DateRange.From().Year(), params.DateRange.From().Month(), params.DateRange.From().Day(), 0, 0, 0, 0, params.DateRange.From().Location())
-	toDate := time.Date(params.DateRange.To().Year(), params.DateRange.To().Month(), params.DateRange.To().Day(), 0, 0, 0, 0, params.DateRange.To().Location())
+	fromDate := params.DateRange.From()
+	toDate := params.DateRange.To()
 
 	// ヒートマップ用データの作成（範囲内のすべての日を含む）
 	var data []heatmap.Data

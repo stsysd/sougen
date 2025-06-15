@@ -62,6 +62,11 @@ func NewDateRange(fromStr, toStr string) (*DateRange, error) {
 		toTime = defaultTo
 	}
 
+	// Normalize from time to beginning of day (00:00:00)
+	fromTime = normalizeToBeginOfDay(fromTime)
+	// Normalize to time to end of day (23:59:59.999999999)
+	toTime = normalizeToEndOfDay(toTime)
+
 	return &DateRange{from: fromTime, to: toTime}, nil
 }
 
@@ -82,6 +87,18 @@ func getDefaultDateRange() (time.Time, time.Time) {
 	latestWeekStart := now.AddDate(0, 0, -weekday)
 	defaultFrom := latestWeekStart.AddDate(0, 0, -52*7)
 	return defaultFrom, now
+}
+
+// normalizeToBeginOfDay normalizes time to beginning of day (00:00:00).
+func normalizeToBeginOfDay(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+// normalizeToEndOfDay normalizes time to end of day (23:59:59.999999999).
+func normalizeToEndOfDay(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 23, 59, 59, 999999999, t.Location())
 }
 
 // Tags represents a tags list value object.
