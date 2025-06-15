@@ -489,7 +489,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	// 日付ごとに集計
 	dateMap := make(map[string]int)
 	for _, record := range records {
-		dateString := record.Timestamp.Format("2006-01-02")
+		dateString := record.Timestamp.Local().Format("2006-01-02")
 		dateMap[dateString] += record.Value
 	}
 
