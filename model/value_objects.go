@@ -40,9 +40,9 @@ func NewDateRange(fromStr, toStr string) (*DateRange, error) {
 
 	// Process from parameter
 	if fromStr != "" {
-		fromTime, err = time.Parse(time.RFC3339, fromStr)
+		fromTime, err = parseDateTime(fromStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid from parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)")
+			return nil, fmt.Errorf("invalid from parameter. Use ISO8601 format (YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ)")
 		}
 	} else {
 		// Set default value
@@ -52,9 +52,9 @@ func NewDateRange(fromStr, toStr string) (*DateRange, error) {
 
 	// Process to parameter
 	if toStr != "" {
-		toTime, err = time.Parse(time.RFC3339, toStr)
+		toTime, err = parseDateTime(toStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid to parameter. Use ISO8601 format (YYYY-MM-DDThh:mm:ssZ)")
+			return nil, fmt.Errorf("invalid to parameter. Use ISO8601 format (YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ)")
 		}
 	} else {
 		// Set default value
@@ -99,6 +99,21 @@ func normalizeToBeginOfDay(t time.Time) time.Time {
 func normalizeToEndOfDay(t time.Time) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 23, 59, 59, 999999999, t.Location())
+}
+
+// parseDateTime parses date string with flexible format support.
+func parseDateTime(dateStr string) (time.Time, error) {
+	// Try RFC3339 format first (with time)
+	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return t, nil
+	}
+	
+	// Try date-only format (YYYY-MM-DD)
+	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return t, nil
+	}
+	
+	return time.Time{}, fmt.Errorf("unable to parse date")
 }
 
 // Tags represents a tags list value object.

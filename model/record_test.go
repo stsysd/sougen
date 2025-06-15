@@ -67,3 +67,69 @@ func TestValidate(t *testing.T) {
 		t.Error("Expected error for empty ID, got nil")
 	}
 }
+
+func TestNewDateRange(t *testing.T) {
+	tests := []struct {
+		name     string
+		fromStr  string
+		toStr    string
+		wantErr  bool
+		checkFn  func(*DateRange) bool
+	}{
+		{
+			name:    "full datetime format",
+			fromStr: "2025-01-01T10:30:45Z",
+			toStr:   "2025-01-02T15:45:30Z",
+			wantErr: false,
+			checkFn: func(dr *DateRange) bool {
+				// from should be normalized to 00:00:00
+				expectedFrom := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+				// to should be normalized to 23:59:59.999999999
+				expectedTo := time.Date(2025, 1, 2, 23, 59, 59, 999999999, time.UTC)
+				return dr.From().Equal(expectedFrom) && dr.To().Equal(expectedTo)
+			},
+		},
+		{
+			name:    "date only format",
+			fromStr: "2025-01-01",
+			toStr:   "2025-01-02",
+			wantErr: false,
+			checkFn: func(dr *DateRange) bool {
+				// from should be normalized to 00:00:00
+				expectedFrom := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+				// to should be normalized to 23:59:59.999999999
+				expectedTo := time.Date(2025, 1, 2, 23, 59, 59, 999999999, time.UTC)
+				return dr.From().Equal(expectedFrom) && dr.To().Equal(expectedTo)
+			},
+		},
+		{
+			name:    "mixed format",
+			fromStr: "2025-01-01",
+			toStr:   "2025-01-02T12:30:45Z",
+			wantErr: false,
+			checkFn: func(dr *DateRange) bool {
+				// Both should be normalized properly
+				return dr.From().Hour() == 0 && dr.To().Hour() == 23
+			},
+		},
+		{
+			name:    "invalid format",
+			fromStr: "invalid-date",
+			toStr:   "2025-01-02",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dr, err := NewDateRange(tt.fromStr, tt.toStr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewDateRange() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && tt.checkFn != nil && !tt.checkFn(dr) {
+				t.Errorf("NewDateRange() validation failed for %s", tt.name)
+			}
+		})
+	}
+}
