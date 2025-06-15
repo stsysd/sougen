@@ -484,7 +484,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	// アクセスカウンター機能: trackパラメータがある場合、レコードを自動作成
 	if params.Track {
 		// 新しいレコードの作成（現在時刻、値は1）
-		record, err := model.NewRecord(time.Now(), params.ProjectName.String(), 1, nil)
+		record, err := model.NewRecord(time.Now(), params.ProjectName.String(), 1, params.Tags.Values())
 		if err != nil {
 			log.Printf("Error creating access counter record: %v", err)
 			// エラーが発生してもグラフ表示は続行するため、エラーレスポンスは返さない
