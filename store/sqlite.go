@@ -34,10 +34,22 @@ type RecordStore interface {
 	ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error)
 	// ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
 	ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error)
-	// GetProjectInfo は指定されたプロジェクトの情報を取得します。
-	GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error)
 	// Close はストアの接続を閉じます。
 	Close() error
+}
+
+// ProjectStore はプロジェクトの保存と取得を行うインターフェースです。
+type ProjectStore interface {
+	// CreateProject は新しいプロジェクトを作成します。
+	CreateProject(ctx context.Context, project *model.Project) error
+	// GetProject は指定された名前のプロジェクトを取得します。
+	GetProject(ctx context.Context, name string) (*model.Project, error)
+	// UpdateProject は指定されたプロジェクトを更新します。
+	UpdateProject(ctx context.Context, project *model.Project) error
+	// DeleteProjectEntity はプロジェクトエンティティのみを削除します（レコードは削除しません）。
+	DeleteProjectEntity(ctx context.Context, name string) error
+	// ListProjects はすべてのプロジェクトを取得します。
+	ListProjects(ctx context.Context) ([]*model.Project, error)
 }
 
 // SQLiteStore はSQLiteを使用したRecordStoreの実装です。
@@ -76,8 +88,15 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 
 // initTables はデータベーステーブルを初期化します。
 func initTables(conn *sql.DB) error {
-	// recordsテーブルの作成
+	// テーブルの作成（外部キー制約なし）
 	_, err := conn.Exec(`
+		CREATE TABLE IF NOT EXISTS projects (
+			name TEXT PRIMARY KEY,
+			description TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		
 		CREATE TABLE IF NOT EXISTS records (
 			id TEXT PRIMARY KEY,
 			project TEXT NOT NULL,
@@ -88,8 +107,7 @@ func initTables(conn *sql.DB) error {
 		CREATE TABLE IF NOT EXISTS tags (
 			record_id TEXT NOT NULL,
 			tag TEXT NOT NULL,
-			PRIMARY KEY (record_id, tag),
-			FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+			PRIMARY KEY (record_id, tag)
 		);
 		
 		CREATE INDEX IF NOT EXISTS idx_records_project_timestamp 
@@ -97,6 +115,7 @@ func initTables(conn *sql.DB) error {
 		
 		CREATE INDEX IF NOT EXISTS idx_tags_record_id ON tags(record_id);
 		CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+		CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
 	`)
 	return err
 }
@@ -108,11 +127,17 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 		return err
 	}
 
+	// プロジェクトの存在確認（アプリケーションレベルでの整合性チェック）
+	_, err := s.GetProject(ctx, record.Project)
+	if err != nil {
+		return fmt.Errorf("project not found: %s", record.Project)
+	}
+
 	// 日時をRFC3339形式に統一して保存
 	formattedTime := record.Timestamp.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
-	err := s.queries.CreateRecord(ctx, db.CreateRecordParams{
+	err = s.queries.CreateRecord(ctx, db.CreateRecordParams{
 		ID:        record.ID.String(),
 		Project:   record.Project,
 		Value:     int64(record.Value),
@@ -141,6 +166,12 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	// バリデーション
 	if err := record.Validate(); err != nil {
 		return err
+	}
+
+	// プロジェクトの存在確認（アプリケーションレベルでの整合性チェック）
+	_, err := s.GetProject(ctx, record.Project)
+	if err != nil {
+		return fmt.Errorf("project not found: %s", record.Project)
 	}
 
 	// トランザクションの開始
@@ -377,51 +408,6 @@ func (s *SQLiteStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// GetProjectInfo は指定されたプロジェクトの情報を取得します。
-func (s *SQLiteStore) GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error) {
-	// sqlcで生成されたクエリを使用
-	projectInfo, err := s.queries.GetProjectInfo(ctx, projectName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query project info: %w", err)
-	}
-
-	// レコードがない場合はエラーを返す
-	if projectInfo.RecordCount == 0 {
-		return nil, sql.ErrNoRows
-	}
-
-	// 日時のパース
-	var firstRecordAt, lastRecordAt time.Time
-
-	if firstRecordAtStr, ok := projectInfo.FirstRecordAt.(string); ok && firstRecordAtStr != "" {
-		firstRecordAt, err = time.Parse(time.RFC3339, firstRecordAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse first record date: %w", err)
-		}
-	}
-
-	if lastRecordAtStr, ok := projectInfo.LastRecordAt.(string); ok && lastRecordAtStr != "" {
-		lastRecordAt, err = time.Parse(time.RFC3339, lastRecordAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse last record date: %w", err)
-		}
-	}
-
-	// interface{}をintに変換
-	totalValue := 0
-	if tv, ok := projectInfo.TotalValue.(int64); ok {
-		totalValue = int(tv)
-	}
-
-	// ProjectInfoオブジェクトの作成
-	return model.NewProjectInfo(
-		projectName,
-		int(projectInfo.RecordCount),
-		totalValue,
-		firstRecordAt,
-		lastRecordAt,
-	), nil
-}
 
 // DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
 func (s *SQLiteStore) DeleteProject(ctx context.Context, projectName string) error {
@@ -503,4 +489,133 @@ func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, project string, un
 	tx = nil // コミットが成功したのでnilにして遅延関数でのロールバックを防ぐ
 
 	return int(rowsAffected), nil
+}
+
+// CreateProject は新しいプロジェクトをデータベースに保存します。
+func (s *SQLiteStore) CreateProject(ctx context.Context, project *model.Project) error {
+	// バリデーション
+	if err := project.Validate(); err != nil {
+		return err
+	}
+
+	// 日時をRFC3339形式に統一して保存
+	createdAtStr := project.CreatedAt.Format(time.RFC3339)
+	updatedAtStr := project.UpdatedAt.Format(time.RFC3339)
+
+	// sqlcで生成されたクエリを使用
+	err := s.queries.CreateProject(ctx, db.CreateProjectParams{
+		Name:        project.Name,
+		Description: project.Description,
+		CreatedAt:   createdAtStr,
+		UpdatedAt:   updatedAtStr,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create project: %w", err)
+	}
+
+	return nil
+}
+
+// GetProject は指定された名前のプロジェクトを取得します。
+func (s *SQLiteStore) GetProject(ctx context.Context, name string) (*model.Project, error) {
+	// sqlcで生成されたクエリを使用
+	dbProject, err := s.queries.GetProject(ctx, name)
+	if err == sql.ErrNoRows {
+		return nil, errors.New("project not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	// 文字列から時間に変換
+	createdAt, err := time.Parse(time.RFC3339, dbProject.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+
+	updatedAt, err := time.Parse(time.RFC3339, dbProject.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse updated_at: %w", err)
+	}
+
+	// プロジェクトの作成
+	return model.LoadProject(dbProject.Name, dbProject.Description, createdAt, updatedAt)
+}
+
+// UpdateProject は指定されたプロジェクトを更新します。
+func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project) error {
+	// バリデーション
+	if err := project.Validate(); err != nil {
+		return err
+	}
+
+	// 日時をRFC3339形式に統一して保存
+	updatedAtStr := project.UpdatedAt.Format(time.RFC3339)
+
+	// sqlcで生成されたクエリを使用
+	result, err := s.queries.UpdateProject(ctx, db.UpdateProjectParams{
+		Description: project.Description,
+		UpdatedAt:   updatedAtStr,
+		Name:        project.Name,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update project: %w", err)
+	}
+
+	// 更新された行数を確認
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// プロジェクトが見つからない場合
+	if rowsAffected == 0 {
+		return errors.New("project not found")
+	}
+
+	return nil
+}
+
+// DeleteProjectEntity はプロジェクトエンティティのみを削除します（レコードは削除しません）。
+func (s *SQLiteStore) DeleteProjectEntity(ctx context.Context, name string) error {
+	// sqlcで生成されたクエリを使用
+	err := s.queries.DeleteProjectEntity(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to delete project entity: %w", err)
+	}
+
+	return nil
+}
+
+// ListProjects はすべてのプロジェクトを取得します。
+func (s *SQLiteStore) ListProjects(ctx context.Context) ([]*model.Project, error) {
+	// sqlcで生成されたクエリを使用
+	dbProjects, err := s.queries.ListProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list projects: %w", err)
+	}
+
+	// 結果の変換
+	var projects []*model.Project
+	for _, dbProject := range dbProjects {
+		// 文字列から時間に変換
+		createdAt, err := time.Parse(time.RFC3339, dbProject.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse created_at: %w", err)
+		}
+
+		updatedAt, err := time.Parse(time.RFC3339, dbProject.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse updated_at: %w", err)
+		}
+
+		// プロジェクトの作成
+		project, err := model.LoadProject(dbProject.Name, dbProject.Description, createdAt, updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load project: %w", err)
+		}
+		projects = append(projects, project)
+	}
+
+	return projects, nil
 }

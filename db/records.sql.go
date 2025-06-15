@@ -11,6 +11,28 @@ import (
 	"strings"
 )
 
+const createProject = `-- name: CreateProject :exec
+INSERT INTO projects (name, description, created_at, updated_at)
+VALUES (?, ?, ?, ?)
+`
+
+type CreateProjectParams struct {
+	Name        string `db:"name" json:"name"`
+	Description string `db:"description" json:"description"`
+	CreatedAt   string `db:"created_at" json:"created_at"`
+	UpdatedAt   string `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
+	_, err := q.db.ExecContext(ctx, createProject,
+		arg.Name,
+		arg.Description,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const createRecord = `-- name: CreateRecord :exec
 INSERT INTO records (id, project, value, timestamp)
 VALUES (?, ?, ?, ?)
@@ -57,6 +79,15 @@ func (q *Queries) DeleteProject(ctx context.Context, project string) error {
 	return err
 }
 
+const deleteProjectEntity = `-- name: DeleteProjectEntity :exec
+DELETE FROM projects WHERE name = ?
+`
+
+func (q *Queries) DeleteProjectEntity(ctx context.Context, name string) error {
+	_, err := q.db.ExecContext(ctx, deleteProjectEntity, name)
+	return err
+}
+
 const deleteRecord = `-- name: DeleteRecord :execresult
 DELETE FROM records WHERE id = ?
 `
@@ -95,31 +126,20 @@ func (q *Queries) DeleteRecordsUntilByProject(ctx context.Context, arg DeleteRec
 	return q.db.ExecContext(ctx, deleteRecordsUntilByProject, arg.Project, arg.Timestamp)
 }
 
-const getProjectInfo = `-- name: GetProjectInfo :one
-SELECT 
-    COUNT(*) as record_count,
-    COALESCE(SUM(value), 0) as total_value,
-    MIN(timestamp) as first_record_at,
-    MAX(timestamp) as last_record_at
-FROM records
-WHERE project = ?
+const getProject = `-- name: GetProject :one
+SELECT name, description, created_at, updated_at
+FROM projects
+WHERE name = ?
 `
 
-type GetProjectInfoRow struct {
-	RecordCount   int64       `db:"record_count" json:"record_count"`
-	TotalValue    interface{} `db:"total_value" json:"total_value"`
-	FirstRecordAt interface{} `db:"first_record_at" json:"first_record_at"`
-	LastRecordAt  interface{} `db:"last_record_at" json:"last_record_at"`
-}
-
-func (q *Queries) GetProjectInfo(ctx context.Context, project string) (GetProjectInfoRow, error) {
-	row := q.db.QueryRowContext(ctx, getProjectInfo, project)
-	var i GetProjectInfoRow
+func (q *Queries) GetProject(ctx context.Context, name string) (Project, error) {
+	row := q.db.QueryRowContext(ctx, getProject, name)
+	var i Project
 	err := row.Scan(
-		&i.RecordCount,
-		&i.TotalValue,
-		&i.FirstRecordAt,
-		&i.LastRecordAt,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -161,6 +181,40 @@ func (q *Queries) GetRecordTags(ctx context.Context, recordID string) ([]string,
 			return nil, err
 		}
 		items = append(items, tag)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjects = `-- name: ListProjects :many
+SELECT name, description, created_at, updated_at
+FROM projects
+ORDER BY updated_at DESC
+`
+
+func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, listProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Project{}
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -269,6 +323,21 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateProject = `-- name: UpdateProject :execresult
+UPDATE projects SET description = ?, updated_at = ?
+WHERE name = ?
+`
+
+type UpdateProjectParams struct {
+	Description string `db:"description" json:"description"`
+	UpdatedAt   string `db:"updated_at" json:"updated_at"`
+	Name        string `db:"name" json:"name"`
+}
+
+func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, updateProject, arg.Description, arg.UpdatedAt, arg.Name)
 }
 
 const updateRecord = `-- name: UpdateRecord :execresult

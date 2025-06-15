@@ -35,14 +35,6 @@ JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ? AND t.tag IN (sqlc.slice(tags))
 ORDER BY r.timestamp;
 
--- name: GetProjectInfo :one
-SELECT 
-    COUNT(*) as record_count,
-    COALESCE(SUM(value), 0) as total_value,
-    MIN(timestamp) as first_record_at,
-    MAX(timestamp) as last_record_at
-FROM records
-WHERE project = ?;
 
 -- name: DeleteProject :exec
 DELETE FROM records WHERE project = ?;
@@ -59,3 +51,24 @@ DELETE FROM tags WHERE record_id = ?;
 
 -- name: DeleteRecordsUntilByProject :execresult
 DELETE FROM records WHERE project = ? AND timestamp < ?;
+
+-- name: CreateProject :exec
+INSERT INTO projects (name, description, created_at, updated_at)
+VALUES (?, ?, ?, ?);
+
+-- name: GetProject :one
+SELECT name, description, created_at, updated_at
+FROM projects
+WHERE name = ?;
+
+-- name: UpdateProject :execresult
+UPDATE projects SET description = ?, updated_at = ?
+WHERE name = ?;
+
+-- name: DeleteProjectEntity :exec
+DELETE FROM projects WHERE name = ?;
+
+-- name: ListProjects :many
+SELECT name, description, created_at, updated_at
+FROM projects
+ORDER BY updated_at DESC;
