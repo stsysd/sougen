@@ -59,8 +59,8 @@ func (s *Server) routes() {
 	securedHandler := http.NewServeMux()
 
 	// Project endpoints
-	securedHandler.HandleFunc("GET /api/v0/projects", s.handleListProjects)
-	securedHandler.HandleFunc("POST /api/v0/projects", s.handleCreateProject)
+	securedHandler.HandleFunc("GET /api/v0/p", s.handleListProjects)
+	securedHandler.HandleFunc("POST /api/v0/p", s.handleCreateProject)
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}", s.handleGetProject)
 	securedHandler.HandleFunc("PUT /api/v0/p/{project_name}", s.handleUpdateProject)
 	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}", s.handleDeleteProject)

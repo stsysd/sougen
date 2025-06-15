@@ -1143,7 +1143,7 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	projectName := "counter-test"
 
 	// trackパラメータ付きのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph?track", nil)
+	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph?track&tags=good", nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
@@ -1183,6 +1183,10 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	if foundRecord.Value != 1 {
 		t.Errorf("Expected record value to be 1, got %d", foundRecord.Value)
 	}
+
+  if len(foundRecord.Tags) != 1 || foundRecord.Tags[0] != "good" {
+    t.Errorf("Expected record to have tag 'good', got %v", foundRecord.Tags)
+  }
 
 	// レコードの日時が現在時刻に近いことを確認（前後5分以内）
 	now := time.Now()
@@ -1642,7 +1646,7 @@ func TestCreateProjectEndpoint(t *testing.T) {
 	}
 
 	// HTTPリクエストを作成
-	req, err := http.NewRequest("POST", "/api/v0/projects", bytes.NewBuffer(requestBody))
+	req, err := http.NewRequest("POST", "/api/v0/p", bytes.NewBuffer(requestBody))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1693,7 +1697,7 @@ func TestCreateDuplicateProjectEndpoint(t *testing.T) {
 	}
 
 	requestBody, _ := json.Marshal(projectData)
-	req, _ := http.NewRequest("POST", "/api/v0/projects", bytes.NewBuffer(requestBody))
+	req, _ := http.NewRequest("POST", "/api/v0/p", bytes.NewBuffer(requestBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -1817,7 +1821,7 @@ func TestListProjectsEndpoint(t *testing.T) {
 	mockStore.MockProjectStore.CreateProject(context.Background(), project2)
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", "/api/v0/projects", nil)
+	req, _ := http.NewRequest("GET", "/api/v0/p", nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
