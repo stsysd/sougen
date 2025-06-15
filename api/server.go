@@ -58,9 +58,14 @@ func (s *Server) routes() {
 	// すべての保護されたエンドポイントをまずセキュアなルータに登録
 	securedHandler := http.NewServeMux()
 
-	// Project and Record endpoints
+	// Project endpoints
+	securedHandler.HandleFunc("GET /api/v0/projects", s.handleListProjects)
+	securedHandler.HandleFunc("POST /api/v0/projects", s.handleCreateProject)
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}", s.handleGetProject)
+	securedHandler.HandleFunc("PUT /api/v0/p/{project_name}", s.handleUpdateProject)
 	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}", s.handleDeleteProject)
+	
+	// Record endpoints
 	securedHandler.HandleFunc("POST /api/v0/p/{project_name}/r", s.handleCreateRecord)
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/r", s.handleListRecords)
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/r/{record_id}", s.handleGetRecord)
@@ -665,7 +670,7 @@ func NewGetProjectParams(r *http.Request) (*GetProjectParams, error) {
 	}, nil
 }
 
-// handleGetProject はプロジェクト情報取得をハンドリングします。
+// handleGetProject はプロジェクト取得をハンドリングします。
 func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewGetProjectParams(r)
@@ -674,13 +679,19 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// プロジェクト情報の取得
-	projectInfo, err := s.store.GetProjectInfo(r.Context(), params.ProjectName.String())
+	// プロジェクトの取得
+	projectStore, ok := s.store.(store.ProjectStore)
+	if !ok {
+		http.Error(w, "Project operations not supported", http.StatusInternalServerError)
+		return
+	}
+
+	project, err := projectStore.GetProject(r.Context(), params.ProjectName.String())
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
 			http.Error(w, fmt.Sprintf("Project '%s' not found", params.ProjectName.String()), http.StatusNotFound)
 		} else {
-			http.Error(w, fmt.Sprintf("Error retrieving project info: %v", err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
 		}
 		return
 	}
@@ -690,7 +701,148 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	// JSONとしてレスポンスを返す
-	if err := json.NewEncoder(w).Encode(projectInfo); err != nil {
+	if err := json.NewEncoder(w).Encode(project); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleListProjects はプロジェクト一覧取得をハンドリングします。
+func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
+	projectStore, ok := s.store.(store.ProjectStore)
+	if !ok {
+		http.Error(w, "Project operations not supported", http.StatusInternalServerError)
+		return
+	}
+
+	projects, err := projectStore.ListProjects(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving projects: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// レスポンスの設定
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	// JSONとしてレスポンスを返す
+	if err := json.NewEncoder(w).Encode(projects); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleCreateProject はプロジェクト作成をハンドリングします。
+func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
+	projectStore, ok := s.store.(store.ProjectStore)
+	if !ok {
+		http.Error(w, "Project operations not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// リクエストボディの読み取り
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	// JSONのパース
+	var projectData struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(body, &projectData); err != nil {
+		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		return
+	}
+
+	// プロジェクトの作成
+	project, err := model.NewProject(projectData.Name, projectData.Description)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid project data: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// データベースに保存
+	if err := projectStore.CreateProject(r.Context(), project); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			http.Error(w, fmt.Sprintf("Project '%s' already exists", project.Name), http.StatusConflict)
+		} else {
+			http.Error(w, fmt.Sprintf("Failed to create project: %v", err), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// レスポンスの設定
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	// 作成されたプロジェクトをJSONとして返す
+	if err := json.NewEncoder(w).Encode(project); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleUpdateProject はプロジェクト更新をハンドリングします。
+func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
+	projectStore, ok := s.store.(store.ProjectStore)
+	if !ok {
+		http.Error(w, "Project operations not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// URLからプロジェクト名を取得
+	projectName := r.PathValue("project_name")
+	if projectName == "" {
+		http.Error(w, "Project name is required", http.StatusBadRequest)
+		return
+	}
+
+	// 既存プロジェクトの取得
+	existingProject, err := projectStore.GetProject(r.Context(), projectName)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
+			http.Error(w, fmt.Sprintf("Project '%s' not found", projectName), http.StatusNotFound)
+		} else {
+			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// リクエストボディの読み取り
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	// JSONのパース
+	var updateData struct {
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(body, &updateData); err != nil {
+		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		return
+	}
+
+	// プロジェクトの更新
+	existingProject.Description = updateData.Description
+	existingProject.UpdatedAt = time.Now()
+
+	// データベースに保存
+	if err := projectStore.UpdateProject(r.Context(), existingProject); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update project: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// レスポンスの設定
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	// 更新されたプロジェクトをJSONとして返す
+	if err := json.NewEncoder(w).Encode(existingProject); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
 		return
 	}

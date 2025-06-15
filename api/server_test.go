@@ -4,8 +4,8 @@ package api
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -164,51 +164,70 @@ func (m *MockRecordStore) DeleteRecordsUntil(ctx context.Context, project string
 	return count, nil
 }
 
-func (m *MockRecordStore) GetProjectInfo(ctx context.Context, projectName string) (*model.ProjectInfo, error) {
-	var recordCount int
-	var totalValue int
-	var firstRecordAt, lastRecordAt time.Time
-
-	// 初期化
-	hasRecords := false
-
-	// プロジェクトのレコードを探索
-	for _, r := range m.records {
-		if r.Project == projectName {
-			if !hasRecords {
-				// 1件目のレコード
-				firstRecordAt = r.Timestamp
-				lastRecordAt = r.Timestamp
-				hasRecords = true
-			} else {
-				// 日時の比較
-				if r.Timestamp.Before(firstRecordAt) {
-					firstRecordAt = r.Timestamp
-				}
-				if r.Timestamp.After(lastRecordAt) {
-					lastRecordAt = r.Timestamp
-				}
-			}
-
-			recordCount++
-			totalValue += r.Value
-		}
-	}
-
-	// レコードがない場合
-	if !hasRecords {
-		return nil, sql.ErrNoRows
-	}
-
-	// ProjectInfoオブジェクトの作成
-	return model.NewProjectInfo(
-		projectName,
-		recordCount,
-		totalValue,
-		firstRecordAt,
-		lastRecordAt,
-	), nil
+// MockProjectStore は ProjectStore のモック実装です。
+type MockProjectStore struct {
+	projects map[string]*model.Project
 }
+
+func NewMockProjectStore() *MockProjectStore {
+	return &MockProjectStore{
+		projects: make(map[string]*model.Project),
+	}
+}
+
+func (m *MockProjectStore) CreateProject(ctx context.Context, project *model.Project) error {
+	if _, exists := m.projects[project.Name]; exists {
+		return errors.New("UNIQUE constraint failed")
+	}
+	m.projects[project.Name] = project
+	return nil
+}
+
+func (m *MockProjectStore) GetProject(ctx context.Context, name string) (*model.Project, error) {
+	project, exists := m.projects[name]
+	if !exists {
+		return nil, errors.New("project not found")
+	}
+	return project, nil
+}
+
+func (m *MockProjectStore) UpdateProject(ctx context.Context, project *model.Project) error {
+	if _, exists := m.projects[project.Name]; !exists {
+		return errors.New("project not found")
+	}
+	m.projects[project.Name] = project
+	return nil
+}
+
+func (m *MockProjectStore) DeleteProjectEntity(ctx context.Context, name string) error {
+	if _, exists := m.projects[name]; !exists {
+		return errors.New("project not found")
+	}
+	delete(m.projects, name)
+	return nil
+}
+
+func (m *MockProjectStore) ListProjects(ctx context.Context) ([]*model.Project, error) {
+	var projects []*model.Project
+	for _, project := range m.projects {
+		projects = append(projects, project)
+	}
+	return projects, nil
+}
+
+// MockCombinedStore は RecordStore と ProjectStore の両方を実装します。
+type MockCombinedStore struct {
+	*MockRecordStore
+	*MockProjectStore
+}
+
+func NewMockCombinedStore() *MockCombinedStore {
+	return &MockCombinedStore{
+		MockRecordStore:  NewMockRecordStore(),
+		MockProjectStore: NewMockProjectStore(),
+	}
+}
+
 
 func TestCreateRecordEndpoint(t *testing.T) {
 	// モックストアの準備
@@ -996,80 +1015,6 @@ func TestListRecordsWithPagination(t *testing.T) {
 	})
 }
 
-func TestGetProject(t *testing.T) {
-	store := NewMockRecordStore()
-
-	// テスト用データの作成
-	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
-
-	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(timestamp, "test", 10, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store.records[rec1.ID.String()] = rec1
-
-	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store.records[rec2.ID.String()] = rec2
-
-	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(timestamp, "another", 20, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store.records[rec3.ID.String()] = rec3
-
-	server := NewServer(store, newTestConfig())
-
-	// テスト対象のエンドポイントを呼び出す
-	req := httptest.NewRequest("GET", "/api/v0/p/test", nil)
-	req.Header.Set("X-API-Key", testAPIKey)
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-
-	// レスポンスを検証
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status OK, got %v", rec.Code)
-	}
-
-	var result model.ProjectInfo
-	err = json.NewDecoder(rec.Body).Decode(&result)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// プロジェクト情報を検証
-	if result.Name != "test" {
-		t.Errorf("Expected project name 'test', got '%s'", result.Name)
-	}
-
-	if result.RecordCount != 2 {
-		t.Errorf("Expected 2 records, got %d", result.RecordCount)
-	}
-
-	if result.TotalValue != 25 {
-		t.Errorf("Expected total value 25, got %d", result.TotalValue)
-	}
-}
-
-func TestGetProjectNotFound(t *testing.T) {
-	store := NewMockRecordStore()
-	server := NewServer(store, newTestConfig())
-
-	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクト名
-	req := httptest.NewRequest("GET", "/api/v0/p/non-existent", nil)
-	req.Header.Set("X-API-Key", testAPIKey)
-	rec := httptest.NewRecorder()
-	server.ServeHTTP(rec, req)
-
-	// レスポンスを検証
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("Expected status NotFound, got %v", rec.Code)
-	}
-}
 
 // TestDeleteProject はプロジェクト削除エンドポイントのテスト
 func TestDeleteProject(t *testing.T) {
@@ -1111,10 +1056,13 @@ func TestDeleteProject(t *testing.T) {
 		t.Errorf("Expected status NoContent, got %v", rec.Code)
 	}
 
-	// プロジェクトが削除されたことを確認
-	_, err = store.GetProjectInfo(context.Background(), "test")
-	if err == nil {
-		t.Errorf("Project should have been deleted, but still exists")
+	// プロジェクトのレコードが削除されたことを確認
+	testRecords, err := store.ListRecords(context.Background(), "test", time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Failed to list test project records: %v", err)
+	}
+	if len(testRecords) != 0 {
+		t.Errorf("Expected 0 records for test project after deletion, got %d", len(testRecords))
 	}
 
 	// 他のプロジェクトのレコードが削除されていないことを確認
@@ -1672,5 +1620,255 @@ func TestGetGraphWithTagsFilter(t *testing.T) {
 	// SVGの基本構造チェック
 	if !strings.Contains(svgContent, "<svg") {
 		t.Error("Response does not contain SVG tag")
+	}
+}
+
+// TestCreateProjectEndpoint はプロジェクト作成エンドポイントをテストします。
+func TestCreateProjectEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テストデータ
+	projectData := map[string]interface{}{
+		"name":        "test-project",
+		"description": "Test project description",
+	}
+
+	// JSON形式でリクエストボディを作成
+	requestBody, err := json.Marshal(projectData)
+	if err != nil {
+		t.Fatalf("Failed to marshal request body: %v", err)
+	}
+
+	// HTTPリクエストを作成
+	req, err := http.NewRequest("POST", "/api/v0/projects", bytes.NewBuffer(requestBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	// レスポンスレコーダーを作成
+	w := httptest.NewRecorder()
+
+	// サーバーでリクエストを処理
+	server.ServeHTTP(w, req)
+
+	// ステータスコードをチェック
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	// レスポンスボディをパース
+	var createdProject model.Project
+	err = json.Unmarshal(w.Body.Bytes(), &createdProject)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// 作成されたプロジェクトの内容をチェック
+	if createdProject.Name != "test-project" {
+		t.Errorf("Expected name 'test-project', got %s", createdProject.Name)
+	}
+	if createdProject.Description != "Test project description" {
+		t.Errorf("Expected description 'Test project description', got %s", createdProject.Description)
+	}
+}
+
+// TestCreateDuplicateProjectEndpoint は重複プロジェクト作成エンドポイントをテストします。
+func TestCreateDuplicateProjectEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// 最初のプロジェクトを作成
+	project, _ := model.NewProject("duplicate", "First project")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+
+	// 同じ名前のプロジェクトを作成しようとする
+	projectData := map[string]interface{}{
+		"name":        "duplicate",
+		"description": "Second project",
+	}
+
+	requestBody, _ := json.Marshal(projectData)
+	req, _ := http.NewRequest("POST", "/api/v0/projects", bytes.NewBuffer(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// Conflictステータスコードを期待
+	if w.Code != http.StatusConflict {
+		t.Errorf("Expected status %d, got %d", http.StatusConflict, w.Code)
+	}
+}
+
+// TestGetProjectEndpoint はプロジェクト取得エンドポイントをテストします。
+func TestGetProjectEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test description")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+
+	// HTTPリクエストを作成
+	req, _ := http.NewRequest("GET", "/api/v0/p/test-project", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードをチェック
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// レスポンスボディをパース
+	var retrievedProject model.Project
+	err := json.Unmarshal(w.Body.Bytes(), &retrievedProject)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// プロジェクトの内容をチェック
+	if retrievedProject.Name != "test-project" {
+		t.Errorf("Expected name 'test-project', got %s", retrievedProject.Name)
+	}
+	if retrievedProject.Description != "Test description" {
+		t.Errorf("Expected description 'Test description', got %s", retrievedProject.Description)
+	}
+}
+
+// TestGetNonExistentProjectEndpoint は存在しないプロジェクト取得エンドポイントをテストします。
+func TestGetNonExistentProjectEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// HTTPリクエストを作成
+	req, _ := http.NewRequest("GET", "/api/v0/p/non-existent", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// Not Foundステータスコードを期待
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
+	}
+}
+
+// TestUpdateProjectEndpoint はプロジェクト更新エンドポイントをテストします。
+func TestUpdateProjectEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("update-test", "Original description")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+
+	// 更新データ
+	updateData := map[string]interface{}{
+		"description": "Updated description",
+	}
+
+	requestBody, _ := json.Marshal(updateData)
+	req, _ := http.NewRequest("PUT", "/api/v0/p/update-test", bytes.NewBuffer(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードをチェック
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// レスポンスボディをパース
+	var updatedProject model.Project
+	err := json.Unmarshal(w.Body.Bytes(), &updatedProject)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// 更新されたプロジェクトの内容をチェック
+	if updatedProject.Description != "Updated description" {
+		t.Errorf("Expected description 'Updated description', got %s", updatedProject.Description)
+	}
+}
+
+// TestListProjectsEndpoint はプロジェクト一覧取得エンドポイントをテストします。
+func TestListProjectsEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを複数作成
+	project1, _ := model.NewProject("project-1", "Project 1")
+	project2, _ := model.NewProject("project-2", "Project 2")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project1)
+	mockStore.MockProjectStore.CreateProject(context.Background(), project2)
+
+	// HTTPリクエストを作成
+	req, _ := http.NewRequest("GET", "/api/v0/projects", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードをチェック
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// レスポンスボディをパース
+	var projects []*model.Project
+	err := json.Unmarshal(w.Body.Bytes(), &projects)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// プロジェクト数をチェック
+	if len(projects) != 2 {
+		t.Errorf("Expected 2 projects, got %d", len(projects))
+	}
+}
+
+// TestDeleteProjectEndpoint はプロジェクト削除エンドポイントをテストします。
+func TestDeleteProjectEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトとレコードを作成
+	project, _ := model.NewProject("delete-test", "Test project")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+	
+	record, _ := model.NewRecord(time.Now(), "delete-test", 1, []string{})
+	mockStore.MockRecordStore.CreateRecord(context.Background(), record)
+
+	// HTTPリクエストを作成
+	req, _ := http.NewRequest("DELETE", "/api/v0/p/delete-test", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードをチェック（現在の実装では204を返す）
+	if w.Code != http.StatusNoContent {
+		t.Errorf("Expected status %d, got %d", http.StatusNoContent, w.Code)
+	}
+
+	// レコードが削除されたことを確認
+	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), "delete-test", time.Now().Add(-24*time.Hour), time.Now().Add(24*time.Hour))
+	if len(records) != 0 {
+		t.Errorf("Expected 0 records after project deletion, got %d", len(records))
 	}
 }

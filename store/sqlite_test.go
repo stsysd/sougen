@@ -2,8 +2,8 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +37,16 @@ func setupTestStore(t *testing.T) (*SQLiteStore, func()) {
 func TestCreateAndGetRecord(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
+
+	// プロジェクトを事前に作成
+	project, err := model.NewProject("exercise", "Exercise project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
 
 	// テストデータ
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
@@ -113,6 +123,16 @@ func TestDeleteRecord(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
 
+	// プロジェクトを事前に作成
+	project, err := model.NewProject("exercise", "Exercise project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
 	// テストデータの作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
 	record, err := model.NewRecord(timestamp, "exercise", 1, []string{"test"})
@@ -156,6 +176,25 @@ func TestDeleteRecord(t *testing.T) {
 func TestListRecords(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("reading", "Reading project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	otherProjectModel, err := model.NewProject("other-project", "Other project")
+	if err != nil {
+		t.Fatalf("Failed to create other project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), otherProjectModel)
+	if err != nil {
+		t.Fatalf("Failed to create other project: %v", err)
+	}
 
 	// テスト用のプロジェクト名
 	project := "reading"
@@ -272,83 +311,29 @@ func TestListRecords(t *testing.T) {
 	}
 }
 
-func TestGetProjectInfo(t *testing.T) {
-	store, cleanup := setupTestStore(t)
-	defer cleanup()
-
-	// テスト用のプロジェクト名とデータ
-	project := "study"
-	startDate := time.Date(2025, 1, 1, 12, 0, 0, 0, time.Local)
-
-	// 3つのレコードを作成（合計値が6になるようにする）
-	values := []int{1, 2, 3}
-	var firstDate, lastDate time.Time
-
-	for i, val := range values {
-		timestamp := startDate.AddDate(0, 0, i) // 1日ずつずらす
-		if i == 0 {
-			firstDate = timestamp
-		}
-		if i == len(values)-1 {
-			lastDate = timestamp
-		}
-
-		record, err := model.NewRecord(timestamp, project, val, nil)
-		if err != nil {
-			t.Fatalf("Failed to create record: %v", err)
-		}
-
-		if err := store.CreateRecord(context.Background(), record); err != nil {
-			t.Fatalf("Failed to store record: %v", err)
-		}
-	}
-
-	// プロジェクト情報を取得
-	info, err := store.GetProjectInfo(context.Background(), project)
-	if err != nil {
-		t.Fatalf("Failed to get project info: %v", err)
-	}
-
-	// 取得した情報が正しいことを確認
-	if info.Name != project {
-		t.Errorf("Expected project name %s, got %s", project, info.Name)
-	}
-
-	if info.RecordCount != len(values) {
-		t.Errorf("Expected record count %d, got %d", len(values), info.RecordCount)
-	}
-
-	expectedTotal := 1 + 2 + 3
-	if info.TotalValue != expectedTotal {
-		t.Errorf("Expected total value %d, got %d", expectedTotal, info.TotalValue)
-	}
-
-	// 日付の精度によって誤差が出る可能性があるため、日付の部分だけ比較
-	if !sameDay(info.FirstRecordAt, firstDate) {
-		t.Errorf("Expected first record date close to %v, got %v", firstDate, info.FirstRecordAt)
-	}
-
-	if !sameDay(info.LastRecordAt, lastDate) {
-		t.Errorf("Expected last record date close to %v, got %v", lastDate, info.LastRecordAt)
-	}
-
-	// 存在しないプロジェクト
-	_, err = store.GetProjectInfo(context.Background(), "non-existent-project")
-	if err != sql.ErrNoRows {
-		t.Errorf("Expected sql.ErrNoRows for non-existent project, got %v", err)
-	}
-}
-
-// sameDay は2つの時刻が同じ日であることを確認します
-func sameDay(t1, t2 time.Time) bool {
-	y1, m1, d1 := t1.Date()
-	y2, m2, d2 := t2.Date()
-	return y1 == y2 && m1 == m2 && d1 == d2
-}
 
 func TestDeleteProject(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel1, err := model.NewProject("project1", "Project 1")
+	if err != nil {
+		t.Fatalf("Failed to create project1 model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel1)
+	if err != nil {
+		t.Fatalf("Failed to create project1: %v", err)
+	}
+
+	projectModel2, err := model.NewProject("project2", "Project 2")
+	if err != nil {
+		t.Fatalf("Failed to create project2 model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel2)
+	if err != nil {
+		t.Fatalf("Failed to create project2: %v", err)
+	}
 
 	// テスト用のデータセットアップ
 	project1 := "project1"
@@ -378,12 +363,12 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1のレコード数を確認
-	project1Info, err := store.GetProjectInfo(context.Background(), project1)
+	project1Records, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
-		t.Fatalf("Failed to get project info: %v", err)
+		t.Fatalf("Failed to list project1 records: %v", err)
 	}
-	if project1Info.RecordCount != 3 {
-		t.Errorf("Expected 3 records for project1, got %d", project1Info.RecordCount)
+	if len(project1Records) != 3 {
+		t.Errorf("Expected 3 records for project1, got %d", len(project1Records))
 	}
 
 	// プロジェクト1を削除
@@ -392,19 +377,22 @@ func TestDeleteProject(t *testing.T) {
 		t.Fatalf("Failed to delete project: %v", err)
 	}
 
-	// プロジェクト1が存在しなくなっていることを確認
-	_, err = store.GetProjectInfo(context.Background(), project1)
-	if err != sql.ErrNoRows {
-		t.Errorf("Expected sql.ErrNoRows after deleting project1, got %v", err)
+	// プロジェクト1のレコードが存在しなくなっていることを確認
+	project1RecordsAfter, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Failed to list project1 records after deletion: %v", err)
+	}
+	if len(project1RecordsAfter) != 0 {
+		t.Errorf("Expected 0 records for project1 after deletion, got %d", len(project1RecordsAfter))
 	}
 
 	// プロジェクト2のレコードが残っていることを確認
-	project2Info, err := store.GetProjectInfo(context.Background(), project2)
+	project2Records, err := store.ListRecords(context.Background(), project2, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
 	if err != nil {
-		t.Fatalf("Failed to get project2 info: %v", err)
+		t.Fatalf("Failed to list project2 records: %v", err)
 	}
-	if project2Info.RecordCount != 2 {
-		t.Errorf("Expected 2 records for project2, got %d", project2Info.RecordCount)
+	if len(project2Records) != 2 {
+		t.Errorf("Expected 2 records for project2, got %d", len(project2Records))
 	}
 
 	// 存在しないプロジェクトを削除しても問題ないことを確認
@@ -418,6 +406,16 @@ func TestDeleteProject(t *testing.T) {
 func TestListRecordsWithTags(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("test-project", "Test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
 
 	project := "test-project"
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
@@ -537,12 +535,22 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
 
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("empty-project", "Empty project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
 	project := "empty-project"
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
 
 	// タグなしのレコードを作成
 	record, _ := model.NewRecord(baseTime, project, 1, []string{})
-	err := store.CreateRecord(context.Background(), record)
+	err = store.CreateRecord(context.Background(), record)
 	if err != nil {
 		t.Fatalf("Failed to create record: %v", err)
 	}
@@ -564,6 +572,16 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 func TestListRecordsWithTagsDateRange(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("date-range-project", "Date range project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
 
 	project := "date-range-project"
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
@@ -599,5 +617,396 @@ func TestListRecordsWithTagsDateRange(t *testing.T) {
 		if !expectedIDs[record.ID] {
 			t.Errorf("Unexpected record ID %s in results", record.ID)
 		}
+	}
+}
+
+// TestCreateProject はプロジェクト作成機能をテストします。
+func TestCreateProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトの作成
+	project, err := model.NewProject("test-project", "Test project description")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+
+	// データベースに保存
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// プロジェクトを取得して確認
+	retrievedProject, err := store.GetProject(context.Background(), "test-project")
+	if err != nil {
+		t.Fatalf("Failed to get project: %v", err)
+	}
+
+	// 内容の確認
+	if retrievedProject.Name != project.Name {
+		t.Errorf("Expected name %s, got %s", project.Name, retrievedProject.Name)
+	}
+	if retrievedProject.Description != project.Description {
+		t.Errorf("Expected description %s, got %s", project.Description, retrievedProject.Description)
+	}
+	if retrievedProject.CreatedAt.IsZero() {
+		t.Error("CreatedAt should not be zero")
+	}
+	if retrievedProject.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt should not be zero")
+	}
+}
+
+// TestGetNonExistentProject は存在しないプロジェクトの取得をテストします。
+func TestGetNonExistentProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// 存在しないプロジェクトを取得
+	_, err := store.GetProject(context.Background(), "non-existent")
+	if err == nil {
+		t.Error("Expected error when getting non-existent project, got nil")
+	}
+}
+
+// TestCreateDuplicateProject は重複プロジェクト作成をテストします。
+func TestCreateDuplicateProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// 最初のプロジェクトを作成
+	project1, err := model.NewProject("duplicate", "First project")
+	if err != nil {
+		t.Fatalf("Failed to create first project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project1)
+	if err != nil {
+		t.Fatalf("Failed to create first project: %v", err)
+	}
+
+	// 同じ名前のプロジェクトを作成（失敗するはず）
+	project2, err := model.NewProject("duplicate", "Second project")
+	if err != nil {
+		t.Fatalf("Failed to create second project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project2)
+	if err == nil {
+		t.Error("Expected error when creating duplicate project, got nil")
+	}
+}
+
+// TestUpdateProject はプロジェクト更新機能をテストします。
+func TestUpdateProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを作成
+	project, err := model.NewProject("update-test", "Original description")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// プロジェクトを取得
+	retrievedProject, err := store.GetProject(context.Background(), "update-test")
+	if err != nil {
+		t.Fatalf("Failed to get project: %v", err)
+	}
+
+	// 説明を更新
+	originalUpdatedAt := retrievedProject.UpdatedAt
+	
+	// 秒単位で時間差を確保してより明確な時間差を作る
+	time.Sleep(1 * time.Second)
+	retrievedProject.Description = "Updated description"
+	retrievedProject.UpdatedAt = time.Now()
+
+	// 更新を保存
+	err = store.UpdateProject(context.Background(), retrievedProject)
+	if err != nil {
+		t.Fatalf("Failed to update project: %v", err)
+	}
+
+	// 更新されたプロジェクトを再取得
+	updatedProject, err := store.GetProject(context.Background(), "update-test")
+	if err != nil {
+		t.Fatalf("Failed to get updated project: %v", err)
+	}
+
+	// 更新内容を確認
+	if updatedProject.Description != "Updated description" {
+		t.Errorf("Expected description 'Updated description', got %s", updatedProject.Description)
+	}
+	
+	// 時間比較を秒単位で行う
+	if !updatedProject.UpdatedAt.Truncate(time.Second).After(originalUpdatedAt.Truncate(time.Second)) {
+		t.Errorf("UpdatedAt should be after original time. Original: %v, Updated: %v", originalUpdatedAt, updatedProject.UpdatedAt)
+	}
+}
+
+// TestUpdateNonExistentProject は存在しないプロジェクトの更新をテストします。
+func TestUpdateNonExistentProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// 存在しないプロジェクトを更新
+	project, err := model.NewProject("non-existent", "Description")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	
+	err = store.UpdateProject(context.Background(), project)
+	if err == nil {
+		t.Error("Expected error when updating non-existent project, got nil")
+	}
+}
+
+// TestDeleteProjectEntity はプロジェクトエンティティ削除機能をテストします。
+func TestDeleteProjectEntity(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを作成
+	project, err := model.NewProject("delete-test", "Test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// プロジェクトエンティティを削除
+	err = store.DeleteProjectEntity(context.Background(), "delete-test")
+	if err != nil {
+		t.Fatalf("Failed to delete project entity: %v", err)
+	}
+
+	// プロジェクトが削除されたことを確認
+	_, err = store.GetProject(context.Background(), "delete-test")
+	if err == nil {
+		t.Error("Expected error when getting deleted project, got nil")
+	}
+}
+
+// TestListProjects はプロジェクト一覧取得機能をテストします。
+func TestListProjects(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// 複数のプロジェクトを作成
+	projects := []struct {
+		name        string
+		description string
+	}{
+		{"project-a", "Project A description"},
+		{"project-b", "Project B description"},
+		{"project-c", "Project C description"},
+	}
+
+	for _, p := range projects {
+		project, err := model.NewProject(p.name, p.description)
+		if err != nil {
+			t.Fatalf("Failed to create project model for %s: %v", p.name, err)
+		}
+		err = store.CreateProject(context.Background(), project)
+		if err != nil {
+			t.Fatalf("Failed to create project %s: %v", p.name, err)
+		}
+		time.Sleep(1 * time.Millisecond) // UpdatedAtの順序を確実にするため
+	}
+
+	// プロジェクト一覧を取得
+	retrievedProjects, err := store.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to list projects: %v", err)
+	}
+
+	// 期待されるプロジェクト数を確認
+	if len(retrievedProjects) != len(projects) {
+		t.Errorf("Expected %d projects, got %d", len(projects), len(retrievedProjects))
+	}
+
+	// プロジェクトがUpdatedAtの降順でソートされていることを確認
+	for i := 1; i < len(retrievedProjects); i++ {
+		if retrievedProjects[i-1].UpdatedAt.Before(retrievedProjects[i].UpdatedAt) {
+			t.Error("Projects should be sorted by UpdatedAt in descending order")
+		}
+	}
+
+	// 各プロジェクトが存在することを確認
+	projectNames := make(map[string]bool)
+	for _, p := range retrievedProjects {
+		projectNames[p.Name] = true
+	}
+	for _, expected := range projects {
+		if !projectNames[expected.name] {
+			t.Errorf("Expected project %s not found in list", expected.name)
+		}
+	}
+}
+
+// TestListEmptyProjects は空のプロジェクト一覧取得をテストします。
+func TestListEmptyProjects(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクト一覧を取得（空のはず）
+	projects, err := store.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to list projects: %v", err)
+	}
+
+	if len(projects) != 0 {
+		t.Errorf("Expected 0 projects, got %d", len(projects))
+	}
+}
+
+// TestRecordProjectReferentialIntegrity はレコード作成時のプロジェクト参照整合性をテストします。
+func TestRecordProjectReferentialIntegrity(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// 存在しないプロジェクトでレコードを作成しようとする
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
+	record, err := model.NewRecord(timestamp, "non-existent-project", 1, []string{"test"})
+	if err != nil {
+		t.Fatalf("Failed to create record model: %v", err)
+	}
+
+	// レコード作成は失敗するはず
+	err = store.CreateRecord(context.Background(), record)
+	if err == nil {
+		t.Error("Expected error when creating record with non-existent project, got nil")
+	}
+	if !strings.Contains(err.Error(), "project not found") {
+		t.Errorf("Expected 'project not found' error, got: %v", err)
+	}
+
+	// プロジェクトを作成
+	project, err := model.NewProject("existing-project", "Test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// 今度は同じプロジェクト名でレコード作成が成功するはず
+	record2, err := model.NewRecord(timestamp, "existing-project", 1, []string{"test"})
+	if err != nil {
+		t.Fatalf("Failed to create second record model: %v", err)
+	}
+
+	err = store.CreateRecord(context.Background(), record2)
+	if err != nil {
+		t.Fatalf("Failed to create record with existing project: %v", err)
+	}
+}
+
+// TestProjectDeletionWithOrphanedRecords はプロジェクト削除後の孤立レコードをテストします。
+func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを作成
+	project, err := model.NewProject("test-project", "Test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// プロジェクトに関連するレコードを作成
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
+	record, err := model.NewRecord(timestamp, "test-project", 1, []string{"test"})
+	if err != nil {
+		t.Fatalf("Failed to create record model: %v", err)
+	}
+	err = store.CreateRecord(context.Background(), record)
+	if err != nil {
+		t.Fatalf("Failed to create record: %v", err)
+	}
+
+	// プロジェクトエンティティを削除
+	err = store.DeleteProjectEntity(context.Background(), "test-project")
+	if err != nil {
+		t.Fatalf("Failed to delete project entity: %v", err)
+	}
+
+	// 外部キー制約がないため、関連するレコードは残っている
+	records, err := store.ListRecords(context.Background(), "test-project", 
+		timestamp.Add(-1*time.Hour), timestamp.Add(1*time.Hour))
+	if err != nil {
+		t.Fatalf("Failed to list records: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Errorf("Expected 1 orphaned record after project deletion, got %d", len(records))
+	}
+
+	// レコードを直接取得しても見つかるはず（孤立状態）
+	_, err = store.GetRecord(context.Background(), record.ID)
+	if err != nil {
+		t.Errorf("Expected to find orphaned record, but got error: %v", err)
+	}
+}
+
+// TestUpdateRecordWithInvalidProject は存在しないプロジェクトへのレコード更新をテストします。
+func TestUpdateRecordWithInvalidProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// 2つのプロジェクトを作成
+	project1, err := model.NewProject("project1", "Project 1")
+	if err != nil {
+		t.Fatalf("Failed to create project1 model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project1)
+	if err != nil {
+		t.Fatalf("Failed to create project1: %v", err)
+	}
+
+	project2, err := model.NewProject("project2", "Project 2")
+	if err != nil {
+		t.Fatalf("Failed to create project2 model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project2)
+	if err != nil {
+		t.Fatalf("Failed to create project2: %v", err)
+	}
+
+	// project1にレコードを作成
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
+	record, err := model.NewRecord(timestamp, "project1", 1, []string{"test"})
+	if err != nil {
+		t.Fatalf("Failed to create record model: %v", err)
+	}
+	err = store.CreateRecord(context.Background(), record)
+	if err != nil {
+		t.Fatalf("Failed to create record: %v", err)
+	}
+
+	// project2を削除
+	err = store.DeleteProjectEntity(context.Background(), "project2")
+	if err != nil {
+		t.Fatalf("Failed to delete project2: %v", err)
+	}
+
+	// レコードを存在しないproject2に更新しようとする（失敗するはず）
+	record.Project = "project2"
+	err = store.UpdateRecord(context.Background(), record)
+	if err == nil {
+		t.Error("Expected error when updating record to non-existent project, got nil")
+	}
+	if !strings.Contains(err.Error(), "project not found") {
+		t.Errorf("Expected 'project not found' error, got: %v", err)
 	}
 }

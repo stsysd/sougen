@@ -4,6 +4,13 @@
 
 package db
 
+type Project struct {
+	Name        string `db:"name" json:"name"`
+	Description string `db:"description" json:"description"`
+	CreatedAt   string `db:"created_at" json:"created_at"`
+	UpdatedAt   string `db:"updated_at" json:"updated_at"`
+}
+
 type Record struct {
 	ID        string `db:"id" json:"id"`
 	Project   string `db:"project" json:"project"`
