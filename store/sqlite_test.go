@@ -1010,3 +1010,165 @@ func TestUpdateRecordWithInvalidProject(t *testing.T) {
 		t.Errorf("Expected 'project not found' error, got: %v", err)
 	}
 }
+
+// TestGetProjectTags はプロジェクトのタグ一覧取得機能をテストします。
+func TestGetProjectTags(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを作成
+	project, err := model.NewProject("tag-test", "Tag test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// 異なるタグを持つレコードを作成
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+	record1, _ := model.NewRecord(baseTime, "tag-test", 1, []string{"work", "important"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), "tag-test", 2, []string{"personal", "urgent"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), "tag-test", 3, []string{"work", "meeting"})
+	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), "tag-test", 4, []string{}) // タグなし
+
+	// レコードを保存
+	for _, record := range []*model.Record{record1, record2, record3, record4} {
+		err := store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+	}
+
+	// プロジェクトのタグ一覧を取得
+	tags, err := store.GetProjectTags(context.Background(), "tag-test")
+	if err != nil {
+		t.Fatalf("Failed to get project tags: %v", err)
+	}
+
+	// 期待されるタグが含まれているかチェック
+	expectedTags := []string{"work", "important", "personal", "urgent", "meeting"}
+	
+	if len(tags) != len(expectedTags) {
+		t.Errorf("Expected %d tags, got %d", len(expectedTags), len(tags))
+	}
+
+	// タグが期待されるものと一致するかチェック
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+
+	for _, expectedTag := range expectedTags {
+		if !tagSet[expectedTag] {
+			t.Errorf("Expected tag '%s' not found in response", expectedTag)
+		}
+	}
+}
+
+// TestGetProjectTagsNonExistentProject は存在しないプロジェクトのタグ取得をテストします。
+func TestGetProjectTagsNonExistentProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// 存在しないプロジェクトのタグを取得（エラーになるはず）
+	_, err := store.GetProjectTags(context.Background(), "non-existent")
+	if err == nil {
+		t.Error("Expected error when getting tags for non-existent project, got nil")
+	}
+}
+
+// TestGetProjectTagsEmptyProject はタグを持たないプロジェクトのタグ取得をテストします。
+func TestGetProjectTagsEmptyProject(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを作成（レコードなし）
+	project, err := model.NewProject("empty-tags", "Empty tags project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// タグを持たないレコードを作成
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+	record, _ := model.NewRecord(baseTime, "empty-tags", 1, []string{})
+	err = store.CreateRecord(context.Background(), record)
+	if err != nil {
+		t.Fatalf("Failed to create record: %v", err)
+	}
+
+	// プロジェクトのタグ一覧を取得（空配列が返されるはず）
+	tags, err := store.GetProjectTags(context.Background(), "empty-tags")
+	if err != nil {
+		t.Fatalf("Failed to get project tags: %v", err)
+	}
+
+	if len(tags) != 0 {
+		t.Errorf("Expected 0 tags for empty project, got %d", len(tags))
+	}
+}
+
+// TestGetProjectTagsWithMultipleRecords は複数レコードからのタグ重複排除をテストします。
+func TestGetProjectTagsWithMultipleRecords(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを作成
+	project, err := model.NewProject("duplicate-tags", "Duplicate tags project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// 重複するタグを持つレコードを作成
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+	record1, _ := model.NewRecord(baseTime, "duplicate-tags", 1, []string{"work", "important"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), "duplicate-tags", 2, []string{"work", "urgent"}) // workが重複
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), "duplicate-tags", 3, []string{"important", "meeting"}) // importantが重複
+
+	// レコードを保存
+	for _, record := range []*model.Record{record1, record2, record3} {
+		err := store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+	}
+
+	// プロジェクトのタグ一覧を取得
+	tags, err := store.GetProjectTags(context.Background(), "duplicate-tags")
+	if err != nil {
+		t.Fatalf("Failed to get project tags: %v", err)
+	}
+
+	// 重複が排除されてユニークなタグのみが返されることを確認
+	expectedTags := []string{"work", "important", "urgent", "meeting"}
+	
+	if len(tags) != len(expectedTags) {
+		t.Errorf("Expected %d unique tags, got %d", len(expectedTags), len(tags))
+	}
+
+	// タグが期待されるものと一致するかチェック
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+
+	for _, expectedTag := range expectedTags {
+		if !tagSet[expectedTag] {
+			t.Errorf("Expected tag '%s' not found in response", expectedTag)
+		}
+	}
+
+	// 重複がないことを確認
+	if len(tags) != len(tagSet) {
+		t.Error("Duplicate tags found in response")
+	}
+}
