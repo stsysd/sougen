@@ -144,6 +144,37 @@ func (q *Queries) GetProject(ctx context.Context, name string) (Project, error) 
 	return i, err
 }
 
+const getProjectTags = `-- name: GetProjectTags :many
+SELECT DISTINCT tag
+FROM tags t
+JOIN records r ON t.record_id = r.id
+WHERE r.project = ?
+ORDER BY tag
+`
+
+func (q *Queries) GetProjectTags(ctx context.Context, project string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getProjectTags, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		items = append(items, tag)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRecord = `-- name: GetRecord :one
 SELECT id, project, value, timestamp
 FROM records
