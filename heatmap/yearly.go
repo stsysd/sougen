@@ -18,7 +18,7 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 			CellPadding: 2,
 			FontSize:    10,
 			FontFamily:  "sans-serif",
-			Colors:      []string{"#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"},
+			Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
 		}
 	}
 
@@ -101,10 +101,8 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 		}
 	}
 
-	// draw cells with configurable ranges or auto-scale
+	// draw cells with 0 value special handling
 	levels := len(opts.Colors)
-	ranges := opts.ValueRanges
-	useCustom := len(ranges) == levels-1
 	for w := range weeks {
 		for i := range 7 {
 			current := firstSunday.Add(time.Duration(w*7+i) * oneDay)
@@ -114,21 +112,21 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 				continue
 			}
 			level := 0
-			if useCustom {
-				for idx, threshold := range ranges {
-					if count < threshold {
-						level = idx
-						break
-					}
-					if idx == len(ranges)-1 {
-						level = levels - 1
-					}
-				}
-			} else if supCount > 0 {
-				level = (count * levels) / supCount
+			
+			// 0値の場合は常にレベル0（薄いグレー）を使用
+			if count == 0 {
+				level = 0
+			} else if supCount > 1 {
+				// 1以上の値を1からlevels-1の範囲に分散
+				level = ((count - 1) * (levels - 2)) / (supCount - 1) + 1
 				if level >= levels {
 					level = levels - 1
 				}
+				if level < 1 {
+					level = 1
+				}
+			} else {
+				level = 1
 			}
 			x := opts.CellPadding + w*(opts.CellSize+opts.CellPadding)
 			y := opts.CellPadding + opts.FontSize + 4 + titleHeight + i*(opts.CellSize+opts.CellPadding)
