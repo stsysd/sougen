@@ -4,10 +4,10 @@ import (
 	"time"
 )
 
-// Data holds the date and count for each day.
+// Data holds the date and value for each day.
 type Data struct {
 	Date  time.Time
-	Count int
+	Value int
 }
 
 // Options configures rendering parameters.

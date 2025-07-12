@@ -30,11 +30,11 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	startDate := data[0].Date
 	endDate := data[len(data)-1].Date
 
-	// map date string to count
-	countMap := make(map[string]int, len(data))
+	// map date string to value
+	valueMap := make(map[string]int, len(data))
 	for _, d := range data {
 		key := d.Date.Format("2006-01-02")
-		countMap[key] = d.Count
+		valueMap[key] = d.Value
 	}
 
 	// align first column to Sunday
@@ -93,11 +93,11 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 		}
 	}
 
-	// find the maximum count for auto-scaling
-	supCount := 5
+	// find the maximum value for auto-scaling
+	supValue := 5
 	for _, d := range data {
-		if d.Count+1 > supCount {
-			supCount = d.Count + 1
+		if d.Value+1 > supValue {
+			supValue = d.Value + 1
 		}
 	}
 
@@ -107,18 +107,18 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 		for i := range 7 {
 			current := firstSunday.Add(time.Duration(w*7+i) * oneDay)
 			key := current.Format("2006-01-02")
-			count, exists := countMap[key]
+			value, exists := valueMap[key]
 			if !exists {
 				continue
 			}
 			level := 0
-			
+
 			// 0値の場合は常にレベル0（薄いグレー）を使用
-			if count == 0 {
+			if value == 0 {
 				level = 0
-			} else if supCount > 1 {
+			} else if supValue > 1 {
 				// 1以上の値を1からlevels-1の範囲に分散
-				level = ((count - 1) * (levels - 2)) / (supCount - 1) + 1
+				level = ((value-1)*(levels-2))/(supValue-1) + 1
 				if level >= levels {
 					level = levels - 1
 				}
@@ -132,12 +132,12 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 			y := opts.CellPadding + opts.FontSize + 4 + titleHeight + i*(opts.CellSize+opts.CellPadding)
 
 			// 各セルに矩形と、その中にtitle要素（ツールチップ）を追加
-			sb.WriteString(fmt.Sprintf(`  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" data-date="%s" data-count="%d">`+"\n",
-				x, y, opts.CellSize, opts.CellSize, opts.Colors[level], key, count))
+			sb.WriteString(fmt.Sprintf(`  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" data-date="%s" data-value="%d">`+"\n",
+				x, y, opts.CellSize, opts.CellSize, opts.Colors[level], key, value))
 
 			// 日付をフォーマットして表示用の文字列を作成
 			displayDate := current.Format("2006年01月02日")
-			sb.WriteString(fmt.Sprintf(`    <title>%s: %d</title>`+"\n", displayDate, count))
+			sb.WriteString(fmt.Sprintf(`    <title>%s: %d</title>`+"\n", displayDate, value))
 			sb.WriteString(`  </rect>` + "\n")
 		}
 	}
@@ -145,4 +145,3 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	sb.WriteString(`</svg>`)
 	return sb.String()
 }
-

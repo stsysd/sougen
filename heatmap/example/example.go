@@ -52,7 +52,7 @@ func generateYearData() []heatmap.Data {
 			// Add the data point
 			data = append(data, heatmap.Data{
 				Date:  current,
-				Count: count,
+				Value: count,
 			})
 		}
 
