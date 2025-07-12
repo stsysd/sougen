@@ -70,11 +70,11 @@ func TestValidate(t *testing.T) {
 
 func TestNewDateRange(t *testing.T) {
 	tests := []struct {
-		name     string
-		fromStr  string
-		toStr    string
-		wantErr  bool
-		checkFn  func(*DateRange) bool
+		name    string
+		fromStr string
+		toStr   string
+		wantErr bool
+		checkFn func(*DateRange) bool
 	}{
 		{
 			name:    "full datetime format",
