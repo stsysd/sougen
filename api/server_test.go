@@ -215,6 +215,17 @@ func (m *MockProjectStore) ListProjects(ctx context.Context) ([]*model.Project, 
 	return projects, nil
 }
 
+func (m *MockProjectStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
+	// プロジェクトの存在確認
+	if _, exists := m.projects[projectName]; !exists {
+		return nil, errors.New("project not found")
+	}
+
+	// 実際のモックではCombinedStoreのRecordStoreからタグを取得する
+	// ここでは簡易的な実装とする
+	return []string{}, nil
+}
+
 // MockCombinedStore は RecordStore と ProjectStore の両方を実装します。
 type MockCombinedStore struct {
 	*MockRecordStore
@@ -228,6 +239,31 @@ func NewMockCombinedStore() *MockCombinedStore {
 	}
 }
 
+// GetProjectTags は CombinedStore 用の実装で、RecordStore からタグを取得します。
+func (m *MockCombinedStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
+	// プロジェクトの存在確認
+	if _, exists := m.MockProjectStore.projects[projectName]; !exists {
+		return nil, errors.New("project not found")
+	}
+
+	// プロジェクトのレコードからユニークなタグを収集
+	tagSet := make(map[string]bool)
+	for _, record := range m.MockRecordStore.records {
+		if record.Project == projectName {
+			for _, tag := range record.Tags {
+				tagSet[tag] = true
+			}
+		}
+	}
+
+	// マップからスライスに変換
+	var tags []string
+	for tag := range tagSet {
+		tags = append(tags, tag)
+	}
+
+	return tags, nil
+}
 
 func TestCreateRecordEndpoint(t *testing.T) {
 	// モックストアの準備
@@ -1015,7 +1051,6 @@ func TestListRecordsWithPagination(t *testing.T) {
 	})
 }
 
-
 // TestDeleteProject はプロジェクト削除エンドポイントのテスト
 func TestDeleteProject(t *testing.T) {
 	store := NewMockRecordStore()
@@ -1184,9 +1219,9 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 		t.Errorf("Expected record value to be 1, got %d", foundRecord.Value)
 	}
 
-  if len(foundRecord.Tags) != 1 || foundRecord.Tags[0] != "good" {
-    t.Errorf("Expected record to have tag 'good', got %v", foundRecord.Tags)
-  }
+	if len(foundRecord.Tags) != 1 || foundRecord.Tags[0] != "good" {
+		t.Errorf("Expected record to have tag 'good', got %v", foundRecord.Tags)
+	}
 
 	// レコードの日時が現在時刻に近いことを確認（前後5分以内）
 	now := time.Now()
@@ -1854,7 +1889,7 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 	// テスト用プロジェクトとレコードを作成
 	project, _ := model.NewProject("delete-test", "Test project")
 	mockStore.MockProjectStore.CreateProject(context.Background(), project)
-	
+
 	record, _ := model.NewRecord(time.Now(), "delete-test", 1, []string{})
 	mockStore.MockRecordStore.CreateRecord(context.Background(), record)
 
@@ -1874,5 +1909,120 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), "delete-test", time.Now().Add(-24*time.Hour), time.Now().Add(24*time.Hour))
 	if len(records) != 0 {
 		t.Errorf("Expected 0 records after project deletion, got %d", len(records))
+	}
+}
+
+// TestGetProjectTagsEndpoint はプロジェクトタグ取得エンドポイントをテストします。
+func TestGetProjectTagsEndpoint(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+
+	// 異なるタグを持つレコードを作成
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+	record1, _ := model.NewRecord(baseTime, "test-project", 1, []string{"work", "important"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), "test-project", 2, []string{"personal", "urgent"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), "test-project", 3, []string{"work", "meeting"})
+
+	mockStore.MockRecordStore.CreateRecord(context.Background(), record1)
+	mockStore.MockRecordStore.CreateRecord(context.Background(), record2)
+	mockStore.MockRecordStore.CreateRecord(context.Background(), record3)
+
+	// HTTPリクエストを作成
+	req, _ := http.NewRequest("GET", "/api/v0/p/test-project/t", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードをチェック
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		t.Logf("Response body: %s", w.Body.String())
+		return
+	}
+
+	// レスポンスボディをパース
+	var tags []string
+	err := json.Unmarshal(w.Body.Bytes(), &tags)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// 期待されるタグが含まれているかチェック
+	expectedTags := []string{"work", "important", "personal", "urgent", "meeting"}
+
+	if len(tags) != len(expectedTags) {
+		t.Errorf("Expected %d tags, got %d", len(expectedTags), len(tags))
+	}
+
+	// タグが期待されるものと一致するかチェック
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
+
+	for _, expectedTag := range expectedTags {
+		if !tagSet[expectedTag] {
+			t.Errorf("Expected tag '%s' not found in response", expectedTag)
+		}
+	}
+}
+
+// TestGetProjectTagsNonExistentProject は存在しないプロジェクトのタグ取得エンドポイントをテストします。
+func TestGetProjectTagsNonExistentProject(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// HTTPリクエストを作成
+	req, _ := http.NewRequest("GET", "/api/v0/p/non-existent/t", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// Internal Server Errorステータスコードを期待（プロジェクトが存在しない場合）
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+
+// TestGetProjectTagsEmptyProject はタグを持たないプロジェクトのタグ取得エンドポイントをテストします。
+func TestGetProjectTagsEmptyProject(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成（レコードなし）
+	project, _ := model.NewProject("empty-project", "Empty project")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+
+	// HTTPリクエストを作成
+	req, _ := http.NewRequest("GET", "/api/v0/p/empty-project/t", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードをチェック
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// レスポンスボディをパース
+	var tags []string
+	err := json.Unmarshal(w.Body.Bytes(), &tags)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// 空の配列が返されることを確認
+	if len(tags) != 0 {
+		t.Errorf("Expected 0 tags for empty project, got %d", len(tags))
 	}
 }

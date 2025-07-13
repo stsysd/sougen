@@ -20,6 +20,7 @@ type Querier interface {
 	DeleteRecordsUntil(ctx context.Context, timestamp string) (sql.Result, error)
 	DeleteRecordsUntilByProject(ctx context.Context, arg DeleteRecordsUntilByProjectParams) (sql.Result, error)
 	GetProject(ctx context.Context, name string) (Project, error)
+	GetProjectTags(ctx context.Context, project string) ([]string, error)
 	GetRecord(ctx context.Context, id string) (Record, error)
 	GetRecordTags(ctx context.Context, recordID string) ([]string, error)
 	ListProjects(ctx context.Context) ([]Project, error)

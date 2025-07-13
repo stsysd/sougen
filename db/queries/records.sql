@@ -72,3 +72,10 @@ DELETE FROM projects WHERE name = ?;
 SELECT name, description, created_at, updated_at
 FROM projects
 ORDER BY updated_at DESC;
+
+-- name: GetProjectTags :many
+SELECT DISTINCT tag
+FROM tags t
+JOIN records r ON t.record_id = r.id
+WHERE r.project = ?
+ORDER BY tag;

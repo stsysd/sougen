@@ -60,6 +60,9 @@ func (s *Server) routes() {
 	securedHandler.HandleFunc("PUT /api/v0/p/{project_name}/r/{record_id}", s.handleUpdateRecord)
 	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}/r/{record_id}", s.handleDeleteRecord)
 	securedHandler.HandleFunc("DELETE /api/v0/r", s.handleBulkDeleteRecords)
+	
+	// Tag endpoints
+	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/t", s.handleGetProjectTags)
 
 	// 認証ミドルウェアを適用し、メインルータにマウント
 	s.router.Handle("/api/", s.authMiddleware(securedHandler))
@@ -915,6 +918,54 @@ func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
+	}
+}
+
+// GetProjectTagsParams represents parameters for getting project tags.
+type GetProjectTagsParams struct {
+	ProjectName *model.ProjectName
+}
+
+// NewGetProjectTagsParams creates parameters for project tags retrieval from HTTP request.
+func NewGetProjectTagsParams(r *http.Request) (*GetProjectTagsParams, error) {
+	projectName, err := model.NewProjectName(r.PathValue("project_name"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &GetProjectTagsParams{
+		ProjectName: projectName,
+	}, nil
+}
+
+// handleGetProjectTags はプロジェクト内のタグ一覧を取得するハンドラーです。
+func (s *Server) handleGetProjectTags(w http.ResponseWriter, r *http.Request) {
+	// パラメータを検証
+	params, err := NewGetProjectTagsParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// プロジェクトストアの確認
+	projectStore, ok := s.store.(store.ProjectStore)
+	if !ok {
+		http.Error(w, "Project operations not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// タグの取得
+	tags, err := projectStore.GetProjectTags(r.Context(), params.ProjectName.String())
+	if err != nil {
+		log.Printf("Error retrieving project tags: %v", err)
+		http.Error(w, "Failed to retrieve project tags", http.StatusInternalServerError)
+		return
+	}
+
+	// レスポンスの返却
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(tags); err != nil {
 		log.Printf("Error encoding response: %v", err)
 	}
 }
