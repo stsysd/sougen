@@ -311,7 +311,6 @@ func TestListRecords(t *testing.T) {
 	}
 }
 
-
 func TestDeleteProject(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -719,7 +718,7 @@ func TestUpdateProject(t *testing.T) {
 
 	// 説明を更新
 	originalUpdatedAt := retrievedProject.UpdatedAt
-	
+
 	// 秒単位で時間差を確保してより明確な時間差を作る
 	time.Sleep(1 * time.Second)
 	retrievedProject.Description = "Updated description"
@@ -741,7 +740,7 @@ func TestUpdateProject(t *testing.T) {
 	if updatedProject.Description != "Updated description" {
 		t.Errorf("Expected description 'Updated description', got %s", updatedProject.Description)
 	}
-	
+
 	// 時間比較を秒単位で行う
 	if !updatedProject.UpdatedAt.Truncate(time.Second).After(originalUpdatedAt.Truncate(time.Second)) {
 		t.Errorf("UpdatedAt should be after original time. Original: %v, Updated: %v", originalUpdatedAt, updatedProject.UpdatedAt)
@@ -758,7 +757,7 @@ func TestUpdateNonExistentProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create project model: %v", err)
 	}
-	
+
 	err = store.UpdateProject(context.Background(), project)
 	if err == nil {
 		t.Error("Expected error when updating non-existent project, got nil")
@@ -942,7 +941,7 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 	}
 
 	// 外部キー制約がないため、関連するレコードは残っている
-	records, err := store.ListRecords(context.Background(), "test-project", 
+	records, err := store.ListRecords(context.Background(), "test-project",
 		timestamp.Add(-1*time.Hour), timestamp.Add(1*time.Hour))
 	if err != nil {
 		t.Fatalf("Failed to list records: %v", err)
@@ -1049,7 +1048,7 @@ func TestGetProjectTags(t *testing.T) {
 
 	// 期待されるタグが含まれているかチェック
 	expectedTags := []string{"work", "important", "personal", "urgent", "meeting"}
-	
+
 	if len(tags) != len(expectedTags) {
 		t.Errorf("Expected %d tags, got %d", len(expectedTags), len(tags))
 	}
@@ -1131,7 +1130,7 @@ func TestGetProjectTagsWithMultipleRecords(t *testing.T) {
 	// 重複するタグを持つレコードを作成
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
 	record1, _ := model.NewRecord(baseTime, "duplicate-tags", 1, []string{"work", "important"})
-	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), "duplicate-tags", 2, []string{"work", "urgent"}) // workが重複
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), "duplicate-tags", 2, []string{"work", "urgent"})       // workが重複
 	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), "duplicate-tags", 3, []string{"important", "meeting"}) // importantが重複
 
 	// レコードを保存
@@ -1150,7 +1149,7 @@ func TestGetProjectTagsWithMultipleRecords(t *testing.T) {
 
 	// 重複が排除されてユニークなタグのみが返されることを確認
 	expectedTags := []string{"work", "important", "urgent", "meeting"}
-	
+
 	if len(tags) != len(expectedTags) {
 		t.Errorf("Expected %d unique tags, got %d", len(expectedTags), len(tags))
 	}

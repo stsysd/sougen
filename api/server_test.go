@@ -799,15 +799,15 @@ func TestGetGraphEndpoint(t *testing.T) {
 	}
 
 	// 5月21日のデータポイント (value=5) と5月22日のデータポイント (value=1) が含まれていることを確認
-	if !strings.Contains(responseBody, `data-date="2025-05-21"`) || !strings.Contains(responseBody, `data-count="5"`) {
+	if !strings.Contains(responseBody, `data-date="2025-05-21"`) || !strings.Contains(responseBody, `data-value="5"`) {
 		t.Errorf("SVG doesn't contain expected data point for 2025-05-21 with count 5")
 	}
-	if !strings.Contains(responseBody, `data-date="2025-05-22"`) || !strings.Contains(responseBody, `data-count="1"`) {
+	if !strings.Contains(responseBody, `data-date="2025-05-22"`) || !strings.Contains(responseBody, `data-value="1"`) {
 		t.Errorf("SVG doesn't contain expected data point for 2025-05-22 with count 1")
 	}
 
 	// データがない日（例：5月10日）も0の値で含まれていることを確認
-	if !strings.Contains(responseBody, `data-date="2025-05-10"`) || !strings.Contains(responseBody, `data-count="0"`) {
+	if !strings.Contains(responseBody, `data-date="2025-05-10"`) || !strings.Contains(responseBody, `data-value="0"`) {
 		t.Errorf("SVG doesn't contain expected data point for 2025-05-10 with count 0")
 	}
 }
@@ -855,7 +855,7 @@ func TestGetGraphEndpointWithoutData(t *testing.T) {
 	}
 
 	// 5月の日付が含まれ、値が0であることを確認
-	if !strings.Contains(responseBody, `data-date="2025-05-15"`) || !strings.Contains(responseBody, `data-count="0"`) {
+	if !strings.Contains(responseBody, `data-date="2025-05-15"`) || !strings.Contains(responseBody, `data-value="0"`) {
 		t.Errorf("SVG doesn't contain expected data point for mid-May with count 0")
 	}
 }

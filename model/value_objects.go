@@ -107,12 +107,12 @@ func parseDateTime(dateStr string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
 		return t, nil
 	}
-	
+
 	// Try date-only format (YYYY-MM-DD)
 	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
 		return t, nil
 	}
-	
+
 	return time.Time{}, fmt.Errorf("unable to parse date")
 }
 
