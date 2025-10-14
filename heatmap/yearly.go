@@ -18,7 +18,7 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 			CellPadding: 2,
 			FontSize:    10,
 			FontFamily:  "sans-serif",
-			Colors:      []string{"#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"},
+			Colors:      []string{"#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
 		}
 	}
 
@@ -30,11 +30,11 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	startDate := data[0].Date
 	endDate := data[len(data)-1].Date
 
-	// map date string to count
-	countMap := make(map[string]int, len(data))
+	// map date string to value
+	valueMap := make(map[string]int, len(data))
 	for _, d := range data {
 		key := d.Date.Format("2006-01-02")
-		countMap[key] = d.Count
+		valueMap[key] = d.Value
 	}
 
 	// align first column to Sunday
@@ -93,53 +93,51 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 		}
 	}
 
-	// find the maximum count for auto-scaling
-	supCount := 5
+	// find the maximum value for auto-scaling
+	supValue := 5
 	for _, d := range data {
-		if d.Count+1 > supCount {
-			supCount = d.Count + 1
+		if d.Value+1 > supValue {
+			supValue = d.Value + 1
 		}
 	}
 
-	// draw cells with configurable ranges or auto-scale
+	// draw cells with 0 value special handling
 	levels := len(opts.Colors)
-	ranges := opts.ValueRanges
-	useCustom := len(ranges) == levels-1
 	for w := range weeks {
 		for i := range 7 {
 			current := firstSunday.Add(time.Duration(w*7+i) * oneDay)
 			key := current.Format("2006-01-02")
-			count, exists := countMap[key]
+			value, exists := valueMap[key]
 			if !exists {
 				continue
 			}
 			level := 0
-			if useCustom {
-				for idx, threshold := range ranges {
-					if count < threshold {
-						level = idx
-						break
-					}
-					if idx == len(ranges)-1 {
-						level = levels - 1
-					}
-				}
-			} else if supCount > 0 {
-				level = (count * levels) / supCount
+
+			// 0値の場合はスキップ
+			if value == 0 {
+				continue
+			}
+			if supValue > 1 {
+				level = (value * levels) / supValue
 				if level >= levels {
 					level = levels - 1
 				}
+				if level < 1 {
+					level = 1
+				}
+			} else {
+				level = 1
 			}
 			x := opts.CellPadding + w*(opts.CellSize+opts.CellPadding)
 			y := opts.CellPadding + opts.FontSize + 4 + titleHeight + i*(opts.CellSize+opts.CellPadding)
 
 			// 各セルに矩形と、その中にtitle要素（ツールチップ）を追加
-			sb.WriteString(fmt.Sprintf(`  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" data-date="%s" data-count="%d">`+"\n",
-				x, y, opts.CellSize, opts.CellSize, opts.Colors[level], key, count))
+			sb.WriteString(fmt.Sprintf(`  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" data-date="%s" data-value="%d">`+"\n",
+				x, y, opts.CellSize, opts.CellSize, opts.Colors[level], key, value))
 
 			// 日付をフォーマットして表示用の文字列を作成
 			displayDate := current.Format("2006年01月02日")
-			sb.WriteString(fmt.Sprintf(`    <title>%s: %d</title>`+"\n", displayDate, count))
+			sb.WriteString(fmt.Sprintf(`    <title>%s: %d</title>`+"\n", displayDate, value))
 			sb.WriteString(`  </rect>` + "\n")
 		}
 	}
@@ -147,4 +145,3 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	sb.WriteString(`</svg>`)
 	return sb.String()
 }
-

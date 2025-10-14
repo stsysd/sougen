@@ -410,7 +410,6 @@ func (s *SQLiteStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-
 // DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
 func (s *SQLiteStore) DeleteProject(ctx context.Context, projectName string) error {
 	// トランザクションの開始

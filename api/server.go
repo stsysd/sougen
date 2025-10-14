@@ -19,7 +19,6 @@ import (
 	"github.com/stsysd/sougen/store"
 )
 
-
 // Server はAPIサーバーの構造体です。
 type Server struct {
 	router *http.ServeMux
@@ -52,7 +51,7 @@ func (s *Server) routes() {
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}", s.handleGetProject)
 	securedHandler.HandleFunc("PUT /api/v0/p/{project_name}", s.handleUpdateProject)
 	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}", s.handleDeleteProject)
-	
+
 	// Record endpoints
 	securedHandler.HandleFunc("POST /api/v0/p/{project_name}/r", s.handleCreateRecord)
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/r", s.handleListRecords)
@@ -60,7 +59,7 @@ func (s *Server) routes() {
 	securedHandler.HandleFunc("PUT /api/v0/p/{project_name}/r/{record_id}", s.handleUpdateRecord)
 	securedHandler.HandleFunc("DELETE /api/v0/p/{project_name}/r/{record_id}", s.handleDeleteRecord)
 	securedHandler.HandleFunc("DELETE /api/v0/r", s.handleBulkDeleteRecords)
-	
+
 	// Tag endpoints
 	securedHandler.HandleFunc("GET /api/v0/p/{project_name}/t", s.handleGetProjectTags)
 
@@ -507,7 +506,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		count := dateMap[dateString] // マップに存在しない場合は0を返す
 		data = append(data, heatmap.Data{
 			Date:  currentDate,
-			Count: count,
+			Value: count,
 		})
 		currentDate = currentDate.AddDate(0, 0, 1) // 次の日に移動
 	}
@@ -979,7 +978,6 @@ func parseInt(s string) (int, error) {
 	}
 	return value, nil
 }
-
 
 // Run はサーバーを指定されたアドレスで起動します。
 func (s *Server) Run(addr string) error {
