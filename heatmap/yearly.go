@@ -18,7 +18,7 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 			CellPadding: 2,
 			FontSize:    10,
 			FontFamily:  "sans-serif",
-			Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
+			Colors:      []string{"#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
 		}
 	}
 
@@ -113,12 +113,12 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 			}
 			level := 0
 
-			// 0値の場合は常にレベル0（薄いグレー）を使用
+			// 0値の場合はスキップ
 			if value == 0 {
-				level = 0
-			} else if supValue > 1 {
-				// 1以上の値を1からlevels-1の範囲に分散
-				level = ((value-1)*(levels-2))/(supValue-1) + 1
+				continue
+			}
+			if supValue > 1 {
+				level = (value * levels) / supValue
 				if level >= levels {
 					level = levels - 1
 				}
