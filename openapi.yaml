@@ -271,7 +271,7 @@ paths:
         required: true
         schema:
           type: string
-    
+
     get:
       tags:
         - visualizations
@@ -293,6 +293,18 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: tags
+          in: query
+          description: フィルタリングするタグ（カンマ区切り）
+          schema:
+            type: string
+          example: "tag1,tag2"
+        - name: track
+          in: query
+          description: アクセスカウンター機能。指定するとグラフ表示時に値1のレコードを自動作成します
+          schema:
+            type: boolean
+          allowEmptyValue: true
       responses:
         '200':
           description: グラフデータの取得に成功
