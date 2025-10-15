@@ -321,11 +321,14 @@ SELECT
     r.project,
     r.value,
     r.timestamp,
-    COALESCE(GROUP_CONCAT(t2.tag, ' '), '') as all_tags
+    COALESCE(GROUP_CONCAT(t.tag, ' '), '') as all_tags
 FROM records r
-JOIN tags t ON r.id = t.record_id
-LEFT JOIN tags t2 ON r.id = t2.record_id
-WHERE r.timestamp BETWEEN ? AND ? AND r.project = ? AND t.tag IN (/*SLICE:tags*/?)
+LEFT JOIN tags t ON r.id = t.record_id
+WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+  AND EXISTS (
+      SELECT 1 FROM tags t_filter
+      WHERE t_filter.record_id = r.id AND t_filter.tag IN (/*SLICE:tags*/?)
+  )
 GROUP BY r.id, r.project, r.value, r.timestamp
 ORDER BY r.timestamp
 `
