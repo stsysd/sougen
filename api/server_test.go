@@ -806,9 +806,57 @@ func TestGetGraphEndpoint(t *testing.T) {
 		t.Errorf("SVG doesn't contain expected data point for 2025-05-22 with count 1")
 	}
 
-	// データがない日（例：5月10日）は含まれないことを確認
-	if strings.Contains(responseBody, `data-date="2025-05-10"`) {
-		t.Errorf("SVG contains non-expected data point for 2025-05-10 with count 0")
+	// データがない日（例：5月10日）も0の値で含まれていることを確認
+	if !strings.Contains(responseBody, `data-date="2025-05-10"`) || !strings.Contains(responseBody, `data-value="0"`) {
+		t.Errorf("SVG doesn't contain expected data point for 2025-05-10 with count 0")
+	}
+}
+
+func TestGetGraphEndpointWithoutData(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+
+	// プロジェクト名
+	projectName := "empty_project"
+
+	server := NewServer(mockStore, newTestConfig())
+
+	// 明示的に日付範囲を指定する（データなしだが日付範囲は有効）
+	fromDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	toDate := time.Date(2025, 5, 31, 23, 59, 59, 0, time.UTC)
+	url := fmt.Sprintf("/p/%s/graph?from=%s&to=%s",
+		projectName,
+		fromDate.Format(time.RFC3339),
+		toDate.Format(time.RFC3339))
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	// レスポンスレコーダーの作成
+	w := httptest.NewRecorder()
+
+	// ハンドラの実行
+	server.ServeHTTP(w, req)
+
+	// レスポンスのステータスコードを確認
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// Content-Typeの確認
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/svg+xml" {
+		t.Errorf("Expected Content-Type image/svg+xml, got %s", contentType)
+	}
+
+	// SVG形式のレスポンスが返されることを確認（空ではなく、日付範囲のすべての日付が含まれるSVG）
+	responseBody := w.Body.String()
+	if !strings.HasPrefix(responseBody, "<svg") {
+		t.Errorf("Response is not in SVG format: %s", responseBody)
+	}
+
+	// 5月の日付が含まれ、値が0であることを確認
+	if !strings.Contains(responseBody, `data-date="2025-05-15"`) || !strings.Contains(responseBody, `data-value="0"`) {
+		t.Errorf("SVG doesn't contain expected data point for mid-May with count 0")
 	}
 }
 
