@@ -3,6 +3,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -77,10 +78,8 @@ func (r *Record) Validate() error {
 			return errors.New("tag cannot be empty")
 		}
 		// スペースは区切り文字として使用するため禁止
-		for _, ch := range tag {
-			if ch == ' ' {
-				return errors.New("tag cannot contain spaces")
-			}
+		if strings.Contains(tag, " ") {
+			return errors.New("tag cannot contain spaces")
 		}
 	}
 
