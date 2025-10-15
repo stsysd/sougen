@@ -332,6 +332,11 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 
 // ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
 func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error) {
+	// タグが指定されていない場合は通常のListRecordsを呼び出す
+	if len(tags) == 0 {
+		return s.ListRecords(ctx, project, from, to)
+	}
+
 	// 日付の範囲を丸一日に設定（秒以下の精度を取り除く）
 	// fromは日付の始まりに設定
 	fromDate := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
@@ -347,6 +352,7 @@ func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, f
 		Timestamp_2: toStr,
 		Project:     project,
 		Tags:        tags,
+		Column5:     int64(len(tags)), // HAVINGクエリ用：タグの数
 	})
 	if err != nil {
 		return nil, err
