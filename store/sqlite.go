@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -312,10 +313,10 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 			return nil, fmt.Errorf("invalid UUID in database: %w", err)
 		}
 
-		// タグを取得
-		tags, err := s.queries.GetRecordTags(ctx, dbRecord.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get record tags: %w", err)
+		// タグを GROUP_CONCAT の結果から分割
+		var tags []string
+		if tagsStr, ok := dbRecord.Tags.(string); ok && tagsStr != "" {
+			tags = strings.Split(tagsStr, " ")
 		}
 
 		// レコードの作成
@@ -366,10 +367,10 @@ func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, f
 			return nil, fmt.Errorf("invalid UUID in database: %w", err)
 		}
 
-		// タグを取得
-		recordTags, err := s.queries.GetRecordTags(ctx, dbRecord.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get record tags: %w", err)
+		// タグを GROUP_CONCAT の結果から分割
+		var recordTags []string
+		if tagsStr, ok := dbRecord.AllTags.(string); ok && tagsStr != "" {
+			recordTags = strings.Split(tagsStr, " ")
 		}
 
 		// レコードの作成
