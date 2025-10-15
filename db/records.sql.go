@@ -323,13 +323,11 @@ SELECT
     r.timestamp,
     COALESCE(GROUP_CONCAT(t.tag, ' '), '') as all_tags
 FROM records r
-LEFT JOIN tags t ON r.id = t.record_id
+INNER JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
-  AND EXISTS (
-      SELECT 1 FROM tags t_filter
-      WHERE t_filter.record_id = r.id AND t_filter.tag IN (/*SLICE:tags*/?)
-  )
+  AND t.tag IN (/*SLICE:tags*/?)
 GROUP BY r.id, r.project, r.value, r.timestamp
+HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
 ORDER BY r.timestamp
 `
 
@@ -338,6 +336,7 @@ type ListRecordsWithTagsParams struct {
 	Timestamp_2 string   `db:"timestamp_2" json:"timestamp_2"`
 	Project     string   `db:"project" json:"project"`
 	Tags        []string `db:"tags" json:"tags"`
+	Column5     int64    `db:"column_5" json:"column_5"`
 }
 
 type ListRecordsWithTagsRow struct {
@@ -349,7 +348,7 @@ type ListRecordsWithTagsRow struct {
 }
 
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
-// Returns records that have any of the specified tags
+// Returns records that have all of the specified tags
 // Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
 func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]ListRecordsWithTagsRow, error) {
 	query := listRecordsWithTags
@@ -365,6 +364,7 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 	} else {
 		query = strings.Replace(query, "/*SLICE:tags*/?", "NULL", 1)
 	}
+	queryParams = append(queryParams, arg.Column5)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
