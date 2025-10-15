@@ -36,7 +36,7 @@ ORDER BY r.timestamp;
 
 -- name: ListRecordsWithTags :many
 -- Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
--- Returns records that have any of the specified tags
+-- Returns records that have all of the specified tags
 -- Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
 SELECT
     r.id,
@@ -45,13 +45,11 @@ SELECT
     r.timestamp,
     COALESCE(GROUP_CONCAT(t.tag, ' '), '') as all_tags
 FROM records r
-LEFT JOIN tags t ON r.id = t.record_id
+INNER JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
-  AND EXISTS (
-      SELECT 1 FROM tags t_filter
-      WHERE t_filter.record_id = r.id AND t_filter.tag IN (sqlc.slice(tags))
-  )
+  AND t.tag IN (sqlc.slice(tags))
 GROUP BY r.id, r.project, r.value, r.timestamp
+HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
 ORDER BY r.timestamp;
 
 
