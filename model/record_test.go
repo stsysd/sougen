@@ -66,6 +66,39 @@ func TestValidate(t *testing.T) {
 	); err == nil {
 		t.Error("Expected error for empty ID, got nil")
 	}
+
+	// 無効なレコード（タグにスペースが含まれる）
+	if _, err := LoadRecord(
+		uuid.New(),
+		time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local),
+		"exercise",
+		1,
+		[]string{"invalid tag"},
+	); err == nil {
+		t.Error("Expected error for tag containing space, got nil")
+	}
+
+	// 無効なレコード（空のタグ）
+	if _, err := LoadRecord(
+		uuid.New(),
+		time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local),
+		"exercise",
+		1,
+		[]string{""},
+	); err == nil {
+		t.Error("Expected error for empty tag, got nil")
+	}
+
+	// 有効なレコード（タグなし）
+	if _, err := LoadRecord(
+		uuid.New(),
+		time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local),
+		"exercise",
+		1,
+		[]string{},
+	); err != nil {
+		t.Errorf("Expected no error for record without tags, got: %v", err)
+	}
 }
 
 func TestNewDateRange(t *testing.T) {
