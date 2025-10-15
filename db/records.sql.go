@@ -257,10 +257,17 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 }
 
 const listRecords = `-- name: ListRecords :many
-SELECT id, project, value, timestamp
-FROM records
-WHERE timestamp BETWEEN ? AND ? AND project = ?
-ORDER BY timestamp
+SELECT
+    r.id,
+    r.project,
+    r.value,
+    r.timestamp,
+    COALESCE(GROUP_CONCAT(t.tag, ' '), '') as tags
+FROM records r
+LEFT JOIN tags t ON r.id = t.record_id
+WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+GROUP BY r.id, r.project, r.value, r.timestamp
+ORDER BY r.timestamp
 `
 
 type ListRecordsParams struct {
@@ -269,21 +276,31 @@ type ListRecordsParams struct {
 	Project     string `db:"project" json:"project"`
 }
 
+type ListRecordsRow struct {
+	ID        string      `db:"id" json:"id"`
+	Project   string      `db:"project" json:"project"`
+	Value     int64       `db:"value" json:"value"`
+	Timestamp string      `db:"timestamp" json:"timestamp"`
+	Tags      interface{} `db:"tags" json:"tags"`
+}
+
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
-func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Record, error) {
+// Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
+func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRecords, arg.Timestamp, arg.Timestamp_2, arg.Project)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Record{}
+	items := []ListRecordsRow{}
 	for rows.Next() {
-		var i Record
+		var i ListRecordsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Project,
 			&i.Value,
 			&i.Timestamp,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -299,10 +316,17 @@ func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Rec
 }
 
 const listRecordsWithTags = `-- name: ListRecordsWithTags :many
-SELECT DISTINCT r.id, r.project, r.value, r.timestamp
+SELECT
+    r.id,
+    r.project,
+    r.value,
+    r.timestamp,
+    COALESCE(GROUP_CONCAT(t2.tag, ' '), '') as all_tags
 FROM records r
 JOIN tags t ON r.id = t.record_id
+LEFT JOIN tags t2 ON r.id = t2.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ? AND t.tag IN (/*SLICE:tags*/?)
+GROUP BY r.id, r.project, r.value, r.timestamp
 ORDER BY r.timestamp
 `
 
@@ -313,9 +337,18 @@ type ListRecordsWithTagsParams struct {
 	Tags        []string `db:"tags" json:"tags"`
 }
 
+type ListRecordsWithTagsRow struct {
+	ID        string      `db:"id" json:"id"`
+	Project   string      `db:"project" json:"project"`
+	Value     int64       `db:"value" json:"value"`
+	Timestamp string      `db:"timestamp" json:"timestamp"`
+	AllTags   interface{} `db:"all_tags" json:"all_tags"`
+}
+
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 // Returns records that have any of the specified tags
-func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]Record, error) {
+// Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
+func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]ListRecordsWithTagsRow, error) {
 	query := listRecordsWithTags
 	var queryParams []interface{}
 	queryParams = append(queryParams, arg.Timestamp)
@@ -334,14 +367,15 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Record{}
+	items := []ListRecordsWithTagsRow{}
 	for rows.Next() {
-		var i Record
+		var i ListRecordsWithTagsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Project,
 			&i.Value,
 			&i.Timestamp,
+			&i.AllTags,
 		); err != nil {
 			return nil, err
 		}

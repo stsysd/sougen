@@ -21,18 +21,34 @@ DELETE FROM records WHERE id = ?;
 
 -- name: ListRecords :many
 -- Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
-SELECT id, project, value, timestamp
-FROM records
-WHERE timestamp BETWEEN ? AND ? AND project = ?
-ORDER BY timestamp;
+-- Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
+SELECT
+    r.id,
+    r.project,
+    r.value,
+    r.timestamp,
+    COALESCE(GROUP_CONCAT(t.tag, ' '), '') as tags
+FROM records r
+LEFT JOIN tags t ON r.id = t.record_id
+WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+GROUP BY r.id, r.project, r.value, r.timestamp
+ORDER BY r.timestamp;
 
 -- name: ListRecordsWithTags :many
 -- Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 -- Returns records that have any of the specified tags
-SELECT DISTINCT r.id, r.project, r.value, r.timestamp
+-- Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
+SELECT
+    r.id,
+    r.project,
+    r.value,
+    r.timestamp,
+    COALESCE(GROUP_CONCAT(t2.tag, ' '), '') as all_tags
 FROM records r
 JOIN tags t ON r.id = t.record_id
+LEFT JOIN tags t2 ON r.id = t2.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ? AND t.tag IN (sqlc.slice(tags))
+GROUP BY r.id, r.project, r.value, r.timestamp
 ORDER BY r.timestamp;
 
 
