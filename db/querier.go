@@ -25,10 +25,12 @@ type Querier interface {
 	GetRecordTags(ctx context.Context, recordID string) ([]string, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
-	ListRecords(ctx context.Context, arg ListRecordsParams) ([]Record, error)
+	// Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
+	ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 	// Returns records that have any of the specified tags
-	ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]Record, error)
+	// Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
+	ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]ListRecordsWithTagsRow, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (sql.Result, error)
 	UpdateRecord(ctx context.Context, arg UpdateRecordParams) (sql.Result, error)
 }

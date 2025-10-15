@@ -3,6 +3,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,6 +70,17 @@ func (r *Record) Validate() error {
 	// カテゴリーの検証
 	if r.Project == "" {
 		return errors.New("project is required")
+	}
+
+	// タグの検証
+	for _, tag := range r.Tags {
+		if tag == "" {
+			return errors.New("tag cannot be empty")
+		}
+		// スペースは区切り文字として使用するため禁止
+		if strings.Contains(tag, " ") {
+			return errors.New("tag cannot contain spaces")
+		}
 	}
 
 	return nil
