@@ -28,7 +28,7 @@ type Querier interface {
 	// Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
 	ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
-	// Returns records that have any of the specified tags
+	// Returns records that have all of the specified tags
 	// Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
 	ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]ListRecordsWithTagsRow, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (sql.Result, error)

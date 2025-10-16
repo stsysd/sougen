@@ -459,10 +459,22 @@ func TestListRecordsWithTags(t *testing.T) {
 			expectedIDs:   []uuid.UUID{record1.ID, record4.ID},
 		},
 		{
-			name:          "Filter by multiple tags (OR)",
-			tags:          []string{"work", "hobby"},
-			expectedCount: 3,
-			expectedIDs:   []uuid.UUID{record1.ID, record2.ID, record3.ID},
+			name:          "Filter by multiple tags (AND - both work and urgent)",
+			tags:          []string{"work", "urgent"},
+			expectedCount: 1,
+			expectedIDs:   []uuid.UUID{record1.ID},
+		},
+		{
+			name:          "Filter by multiple tags (AND - both personal and urgent)",
+			tags:          []string{"personal", "urgent"},
+			expectedCount: 1,
+			expectedIDs:   []uuid.UUID{record4.ID},
+		},
+		{
+			name:          "Filter by multiple tags (AND - work and meeting)",
+			tags:          []string{"work", "meeting"},
+			expectedCount: 1,
+			expectedIDs:   []uuid.UUID{record3.ID},
 		},
 		{
 			name:          "Filter by non-existent tag",
@@ -471,10 +483,16 @@ func TestListRecordsWithTags(t *testing.T) {
 			expectedIDs:   []uuid.UUID{},
 		},
 		{
-			name:          "Filter by multiple urgent,meeting (OR)",
-			tags:          []string{"urgent", "meeting"},
-			expectedCount: 3,
-			expectedIDs:   []uuid.UUID{record1.ID, record3.ID, record4.ID},
+			name:          "Filter by multiple tags where no record has all (AND)",
+			tags:          []string{"urgent", "hobby"},
+			expectedCount: 0,
+			expectedIDs:   []uuid.UUID{},
+		},
+		{
+			name:          "Filter by empty tags",
+			tags:          []string{},
+			expectedCount: 4,
+			expectedIDs:   []uuid.UUID{record1.ID, record2.ID, record3.ID, record4.ID},
 		},
 	}
 
@@ -507,22 +525,23 @@ func TestListRecordsWithTags(t *testing.T) {
 				}
 			}
 
-			// 取得されたレコードが期待されるタグを持っているかチェック
+			// 取得されたレコードが期待される全てのタグを持っているかチェック (AND条件)
 			for _, record := range records {
-				hasMatchingTag := false
+				if len(tc.tags) == 0 {
+					continue // タグ指定がない場合はスキップ
+				}
+				// 全てのフィルタタグがレコードに含まれているか確認
 				for _, filterTag := range tc.tags {
+					hasTag := false
 					for _, recordTag := range record.Tags {
 						if recordTag == filterTag {
-							hasMatchingTag = true
+							hasTag = true
 							break
 						}
 					}
-					if hasMatchingTag {
-						break
+					if !hasTag {
+						t.Errorf("Record %s does not have required tag '%s' from filter tags %v", record.ID, filterTag, tc.tags)
 					}
-				}
-				if !hasMatchingTag && len(tc.tags) > 0 {
-					t.Errorf("Record %s does not have any of the filter tags %v, but was returned", record.ID, tc.tags)
 				}
 			}
 		})
