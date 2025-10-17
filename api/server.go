@@ -201,7 +201,7 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 	// レコードの取得
 	record, err := s.store.GetRecord(r.Context(), params.RecordID.UUID())
 	if err != nil {
-		if err.Error() == "record not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error retrieving record: %v", err)
@@ -295,7 +295,7 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	// 更新前にレコードが存在するかつ指定プロジェクトのものかを確認
 	existingRecord, err := s.store.GetRecord(r.Context(), params.RecordID.UUID())
 	if err != nil {
-		if err.Error() == "record not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error retrieving record: %v", err)
@@ -336,7 +336,7 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 
 	// レコードの更新
 	if err := s.store.UpdateRecord(r.Context(), &updatedRecord); err != nil {
-		if err.Error() == "record not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error updating record: %v", err)
@@ -388,7 +388,7 @@ func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
 	// 削除前にレコードが存在するかつ指定プロジェクトのものかを確認
 	record, err := s.store.GetRecord(r.Context(), params.RecordID.UUID())
 	if err != nil {
-		if err.Error() == "record not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error retrieving record: %v", err)
@@ -660,7 +660,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 	project, err := projectStore.GetProject(r.Context(), params.ProjectName.String())
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, fmt.Sprintf("Project '%s' not found", params.ProjectName.String()), http.StatusNotFound)
 		} else {
 			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
@@ -775,7 +775,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	// 既存プロジェクトの取得
 	existingProject, err := projectStore.GetProject(r.Context(), projectName)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, fmt.Sprintf("Project '%s' not found", projectName), http.StatusNotFound)
 		} else {
 			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
