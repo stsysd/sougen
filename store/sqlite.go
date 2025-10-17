@@ -4,7 +4,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -215,7 +214,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 
 	// レコードが見つからない場合
 	if rowsAffected == 0 {
-		return errors.New("record not found")
+		return fmt.Errorf("record %s: %w", record.ID.String(), sql.ErrNoRows)
 	}
 
 	// 既存のタグを削除
@@ -249,7 +248,7 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 	// sqlcで生成されたクエリを使用
 	dbRecord, err := s.queries.GetRecord(ctx, id.String())
 	if err == sql.ErrNoRows {
-		return nil, errors.New("record not found")
+		return nil, fmt.Errorf("record %s: %w", id.String(), sql.ErrNoRows)
 	}
 	if err != nil {
 		return nil, err
@@ -411,7 +410,7 @@ func (s *SQLiteStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
 
 	// レコードが見つからない場合
 	if rowsAffected == 0 {
-		return errors.New("record not found")
+		return fmt.Errorf("record %s: %w", id.String(), sql.ErrNoRows)
 	}
 
 	return nil
@@ -529,7 +528,7 @@ func (s *SQLiteStore) GetProject(ctx context.Context, name string) (*model.Proje
 	// sqlcで生成されたクエリを使用
 	dbProject, err := s.queries.GetProject(ctx, name)
 	if err == sql.ErrNoRows {
-		return nil, errors.New("project not found")
+		return nil, fmt.Errorf("project %s: %w", name, sql.ErrNoRows)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project: %w", err)
@@ -578,7 +577,7 @@ func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project)
 
 	// プロジェクトが見つからない場合
 	if rowsAffected == 0 {
-		return errors.New("project not found")
+		return fmt.Errorf("project %s: %w", project.Name, sql.ErrNoRows)
 	}
 
 	return nil
