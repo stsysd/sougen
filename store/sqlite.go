@@ -629,12 +629,6 @@ func (s *SQLiteStore) ListProjects(ctx context.Context) ([]*model.Project, error
 
 // GetProjectTags は指定されたプロジェクトのタグ一覧を取得します。
 func (s *SQLiteStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
-	// プロジェクトの存在確認
-	_, err := s.GetProject(ctx, projectName)
-	if err != nil {
-		return nil, err
-	}
-
 	// sqlcで生成されたクエリを使用
 	tags, err := s.queries.GetProjectTags(ctx, projectName)
 	if err != nil {
