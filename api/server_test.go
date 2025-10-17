@@ -4,6 +4,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,7 +54,7 @@ func (m *MockRecordStore) CreateRecord(ctx context.Context, record *model.Record
 func (m *MockRecordStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error) {
 	record, exists := m.records[id.String()]
 	if !exists {
-		return nil, fmt.Errorf("record not found")
+		return nil, fmt.Errorf("record %s: %w", id.String(), sql.ErrNoRows)
 	}
 	return record, nil
 }
@@ -64,7 +65,7 @@ func (m *MockRecordStore) UpdateRecord(ctx context.Context, record *model.Record
 	}
 	_, exists := m.records[record.ID.String()]
 	if !exists {
-		return fmt.Errorf("record not found")
+		return fmt.Errorf("record %s: %w", record.ID.String(), sql.ErrNoRows)
 	}
 	m.records[record.ID.String()] = record
 	return nil
@@ -73,7 +74,7 @@ func (m *MockRecordStore) UpdateRecord(ctx context.Context, record *model.Record
 func (m *MockRecordStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
 	_, exists := m.records[id.String()]
 	if !exists {
-		return fmt.Errorf("record not found")
+		return fmt.Errorf("record %s: %w", id.String(), sql.ErrNoRows)
 	}
 	delete(m.records, id.String())
 	return nil
@@ -186,14 +187,14 @@ func (m *MockProjectStore) CreateProject(ctx context.Context, project *model.Pro
 func (m *MockProjectStore) GetProject(ctx context.Context, name string) (*model.Project, error) {
 	project, exists := m.projects[name]
 	if !exists {
-		return nil, errors.New("project not found")
+		return nil, fmt.Errorf("project %s: %w", name, sql.ErrNoRows)
 	}
 	return project, nil
 }
 
 func (m *MockProjectStore) UpdateProject(ctx context.Context, project *model.Project) error {
 	if _, exists := m.projects[project.Name]; !exists {
-		return errors.New("project not found")
+		return fmt.Errorf("project %s: %w", project.Name, sql.ErrNoRows)
 	}
 	m.projects[project.Name] = project
 	return nil
@@ -201,7 +202,7 @@ func (m *MockProjectStore) UpdateProject(ctx context.Context, project *model.Pro
 
 func (m *MockProjectStore) DeleteProjectEntity(ctx context.Context, name string) error {
 	if _, exists := m.projects[name]; !exists {
-		return errors.New("project not found")
+		return fmt.Errorf("project %s: %w", name, sql.ErrNoRows)
 	}
 	delete(m.projects, name)
 	return nil
@@ -218,7 +219,7 @@ func (m *MockProjectStore) ListProjects(ctx context.Context) ([]*model.Project, 
 func (m *MockProjectStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
 	// プロジェクトの存在確認
 	if _, exists := m.projects[projectName]; !exists {
-		return nil, errors.New("project not found")
+		return nil, fmt.Errorf("project %s: %w", projectName, sql.ErrNoRows)
 	}
 
 	// 実際のモックではCombinedStoreのRecordStoreからタグを取得する
@@ -243,7 +244,7 @@ func NewMockCombinedStore() *MockCombinedStore {
 func (m *MockCombinedStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
 	// プロジェクトの存在確認
 	if _, exists := m.MockProjectStore.projects[projectName]; !exists {
-		return nil, errors.New("project not found")
+		return nil, fmt.Errorf("project %s: %w", projectName, sql.ErrNoRows)
 	}
 
 	// プロジェクトのレコードからユニークなタグを収集
