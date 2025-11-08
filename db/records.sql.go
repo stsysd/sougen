@@ -226,10 +226,16 @@ const listProjects = `-- name: ListProjects :many
 SELECT name, description, created_at, updated_at
 FROM projects
 ORDER BY updated_at DESC
+LIMIT ? OFFSET ?
 `
 
-func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := q.db.QueryContext(ctx, listProjects)
+type ListProjectsParams struct {
+	Limit  int64 `db:"limit" json:"limit"`
+	Offset int64 `db:"offset" json:"offset"`
+}
+
+func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, listProjects, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

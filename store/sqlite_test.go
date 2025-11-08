@@ -1071,7 +1071,9 @@ func TestListProjects(t *testing.T) {
 	}
 
 	// プロジェクト一覧を取得
-	retrievedProjects, err := store.ListProjects(context.Background())
+	pagination, _ := model.NewPagination("100", "0")
+	params := &ListProjectsParams{Pagination: pagination}
+	retrievedProjects, err := store.ListProjects(context.Background(), params)
 	if err != nil {
 		t.Fatalf("Failed to list projects: %v", err)
 	}
@@ -1106,7 +1108,9 @@ func TestListEmptyProjects(t *testing.T) {
 	defer cleanup()
 
 	// プロジェクト一覧を取得（空のはず）
-	projects, err := store.ListProjects(context.Background())
+	pagination, _ := model.NewPagination("100", "0")
+	params := &ListProjectsParams{Pagination: pagination}
+	projects, err := store.ListProjects(context.Background(), params)
 	if err != nil {
 		t.Fatalf("Failed to list projects: %v", err)
 	}

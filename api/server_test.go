@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stsysd/sougen/config"
 	"github.com/stsysd/sougen/model"
+	"github.com/stsysd/sougen/store"
 )
 
 // テスト用の定数
@@ -221,12 +222,29 @@ func (m *MockProjectStore) DeleteProjectEntity(ctx context.Context, name string)
 	return nil
 }
 
-func (m *MockProjectStore) ListProjects(ctx context.Context) ([]*model.Project, error) {
+func (m *MockProjectStore) ListProjects(ctx context.Context, params *store.ListProjectsParams) ([]*model.Project, error) {
 	var projects []*model.Project
 	for _, project := range m.projects {
 		projects = append(projects, project)
 	}
-	return projects, nil
+
+	// updated_atの降順にソート（SQLiteの実装と同様に）
+	sort.Slice(projects, func(i, j int) bool {
+		return projects[i].UpdatedAt.After(projects[j].UpdatedAt)
+	})
+
+	// ページネーションを適用
+	offset := params.Pagination.Offset()
+	limit := params.Pagination.Limit()
+	if offset >= len(projects) {
+		return []*model.Project{}, nil
+	}
+	endIndex := offset + limit
+	if endIndex > len(projects) {
+		endIndex = len(projects)
+	}
+
+	return projects[offset:endIndex], nil
 }
 
 func (m *MockProjectStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
@@ -1232,7 +1250,7 @@ func TestListRecordsWithSortOrder(t *testing.T) {
 
 // TestDeleteProject はプロジェクト削除エンドポイントのテスト
 func TestDeleteProject(t *testing.T) {
-	store := NewMockRecordStore()
+	mockStore := NewMockRecordStore()
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -1242,22 +1260,22 @@ func TestDeleteProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.records[rec1.ID.String()] = rec1
+	mockStore.records[rec1.ID.String()] = rec1
 
 	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.records[rec2.ID.String()] = rec2
+	mockStore.records[rec2.ID.String()] = rec2
 
 	// 別プロジェクトのレコードも追加
 	rec3, err := model.NewRecord(timestamp, "another", 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.records[rec3.ID.String()] = rec3
+	mockStore.records[rec3.ID.String()] = rec3
 
-	server := NewServer(store, newTestConfig())
+	server := NewServer(mockStore, newTestConfig())
 
 	// テスト対象のエンドポイントを呼び出す
 	req := httptest.NewRequest("DELETE", "/api/v0/p/test", nil)
@@ -1272,7 +1290,10 @@ func TestDeleteProject(t *testing.T) {
 
 	// プロジェクトのレコードが削除されたことを確認
 	sortOrder, _ := model.NewSortOrder("desc")
-	testRecords, err := store.ListRecords(context.Background(), "test", time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
+	testRecords, err := mockStore.ListRecords(context.Background(), "test",
+		time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		sortOrder)
 	if err != nil {
 		t.Fatalf("Failed to list test project records: %v", err)
 	}
@@ -1281,7 +1302,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// 他のプロジェクトのレコードが削除されていないことを確認
-	_, err = store.GetRecord(context.Background(), rec3.ID)
+	_, err = mockStore.GetRecord(context.Background(), rec3.ID)
 	if err != nil {
 		t.Errorf("Record from other project should not be deleted")
 	}
@@ -2087,7 +2108,10 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 
 	// レコードが削除されたことを確認
 	sortOrder, _ := model.NewSortOrder("desc")
-	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), "delete-test", time.Now().Add(-24*time.Hour), time.Now().Add(24*time.Hour), sortOrder)
+	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), "delete-test",
+		time.Now().Add(-24*time.Hour),
+		time.Now().Add(24*time.Hour),
+		sortOrder)
 	if len(records) != 0 {
 		t.Errorf("Expected 0 records after project deletion, got %d", len(records))
 	}
@@ -2206,4 +2230,136 @@ func TestGetProjectTagsEmptyProject(t *testing.T) {
 	if len(tags) != 0 {
 		t.Errorf("Expected 0 tags for empty project, got %d", len(tags))
 	}
+}
+
+func TestListProjectsWithPagination(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用に5件のプロジェクトを作成
+	var allProjects []*model.Project
+	for i := 0; i < 5; i++ {
+		projectName := fmt.Sprintf("project-%d", i)
+		description := fmt.Sprintf("Project %d", i)
+		project, _ := model.NewProject(projectName, description)
+		mockStore.MockProjectStore.CreateProject(context.Background(), project)
+		allProjects = append(allProjects, project)
+	}
+
+	// ケース1: limit=2, offset=0 で最初の2件を取得
+	t.Run("First Page", func(t *testing.T) {
+		url := "/api/v0/p?limit=2&offset=0"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var projects []*model.Project
+		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(projects) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(projects))
+		}
+	})
+
+	// ケース2: limit=2, offset=2 で次の2件を取得
+	t.Run("Second Page", func(t *testing.T) {
+		url := "/api/v0/p?limit=2&offset=2"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var projects []*model.Project
+		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(projects) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(projects))
+		}
+	})
+
+	// ケース3: limit=2, offset=4 で最後の1件を取得
+	t.Run("Last Page", func(t *testing.T) {
+		url := "/api/v0/p?limit=2&offset=4"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var projects []*model.Project
+		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(projects) != 1 {
+			t.Errorf("Expected 1 project, got %d", len(projects))
+		}
+	})
+
+	// ケース4: offset が範囲外の場合、空配列が返される
+	t.Run("Out of Range Offset", func(t *testing.T) {
+		url := "/api/v0/p?limit=2&offset=10"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var projects []*model.Project
+		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(projects) != 0 {
+			t.Errorf("Expected 0 projects, got %d", len(projects))
+		}
+	})
+
+	// ケース5: パラメータなしでデフォルトのlimitが適用される
+	t.Run("Default Pagination", func(t *testing.T) {
+		url := "/api/v0/p"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var projects []*model.Project
+		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		// デフォルトのlimitは100なので、5件すべて返される
+		if len(projects) != 5 {
+			t.Errorf("Expected 5 projects, got %d", len(projects))
+		}
+	})
 }

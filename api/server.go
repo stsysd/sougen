@@ -685,15 +685,46 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListProjectsParams はプロジェクト一覧取得のパラメータです。
+type ListProjectsParams struct {
+	Pagination *model.Pagination
+}
+
+// NewListProjectsParams はリクエストからプロジェクト一覧取得のパラメータを作成します。
+func NewListProjectsParams(r *http.Request) (*ListProjectsParams, error) {
+	query := r.URL.Query()
+
+	pagination, err := model.NewPagination(query.Get("limit"), query.Get("offset"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListProjectsParams{
+		Pagination: pagination,
+	}, nil
+}
+
 // handleListProjects はプロジェクト一覧取得をハンドリングします。
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
+	// パラメータを検証
+	params, err := NewListProjectsParams(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	projectStore, ok := s.store.(store.ProjectStore)
 	if !ok {
 		http.Error(w, "Project operations not supported", http.StatusInternalServerError)
 		return
 	}
 
-	projects, err := projectStore.ListProjects(r.Context())
+	// store.ListProjectsParams を作成
+	storeParams := &store.ListProjectsParams{
+		Pagination: params.Pagination,
+	}
+
+	projects, err := projectStore.ListProjects(r.Context(), storeParams)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error retrieving projects: %v", err), http.StatusInternalServerError)
 		return
