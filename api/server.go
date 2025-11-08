@@ -606,9 +606,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	// ページネーションの適用
 	totalRecords := len(records)
 	endIndex := params.Pagination.Offset() + params.Pagination.Limit()
-	if endIndex > totalRecords {
-		endIndex = totalRecords
-	}
+  endIndex = min(endIndex, totalRecords)
 
 	// 指定された範囲のレコードのみを抽出
 	var pagedRecords []*model.Record
