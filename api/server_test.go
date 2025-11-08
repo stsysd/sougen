@@ -80,38 +80,18 @@ func (m *MockRecordStore) DeleteRecord(ctx context.Context, id uuid.UUID) error 
 	return nil
 }
 
-func (m *MockRecordStore) ListRecords(ctx context.Context, project string, from, to time.Time, order *model.SortOrder) ([]*model.Record, error) {
+func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRecordsParams) ([]*model.Record, error) {
 	var records []*model.Record
 
 	for _, r := range m.records {
-		if r.Project == project && !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
-			records = append(records, r)
+		if r.Project != params.Project || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+			continue
 		}
-	}
 
-	// Timestampの昇順にソート（SQLiteの実装と同様に）
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].Timestamp.Before(records[j].Timestamp)
-	})
-
-	// 降順の場合は結果を逆順にする
-	if order.IsDesc() {
-		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-			records[i], records[j] = records[j], records[i]
-		}
-	}
-
-	return records, nil
-}
-
-func (m *MockRecordStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string, order *model.SortOrder) ([]*model.Record, error) {
-	var records []*model.Record
-
-	for _, r := range m.records {
-		if r.Project == project && !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
-			// タグフィルタチェック（OR条件）
+		// タグフィルタ
+		if len(params.Tags) > 0 {
 			tagMatch := false
-			for _, filterTag := range tags {
+			for _, filterTag := range params.Tags {
 				for _, recordTag := range r.Tags {
 					if recordTag == filterTag {
 						tagMatch = true
@@ -122,10 +102,12 @@ func (m *MockRecordStore) ListRecordsWithTags(ctx context.Context, project strin
 					break
 				}
 			}
-			if tagMatch {
-				records = append(records, r)
+			if !tagMatch {
+				continue
 			}
 		}
+
+		records = append(records, r)
 	}
 
 	// Timestampの昇順にソート（SQLiteの実装と同様に）
@@ -134,13 +116,24 @@ func (m *MockRecordStore) ListRecordsWithTags(ctx context.Context, project strin
 	})
 
 	// 降順の場合は結果を逆順にする
-	if order.IsDesc() {
+	if params.SortOrder.IsDesc() {
 		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
 			records[i], records[j] = records[j], records[i]
 		}
 	}
 
-	return records, nil
+	// ページネーションを適用
+	offset := params.Pagination.Offset()
+	limit := params.Pagination.Limit()
+	if offset >= len(records) {
+		return []*model.Record{}, nil
+	}
+	endIndex := offset + limit
+	if endIndex > len(records) {
+		endIndex = len(records)
+	}
+
+	return records[offset:endIndex], nil
 }
 
 func (m *MockRecordStore) Close() error {
@@ -1290,10 +1283,15 @@ func TestDeleteProject(t *testing.T) {
 
 	// プロジェクトのレコードが削除されたことを確認
 	sortOrder, _ := model.NewSortOrder("desc")
-	testRecords, err := mockStore.ListRecords(context.Background(), "test",
-		time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
-		sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	testRecords, err := mockStore.ListRecords(context.Background(), &store.ListRecordsParams{
+		Project:    "test",
+		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list test project records: %v", err)
 	}
@@ -2108,10 +2106,15 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 
 	// レコードが削除されたことを確認
 	sortOrder, _ := model.NewSortOrder("desc")
-	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), "delete-test",
-		time.Now().Add(-24*time.Hour),
-		time.Now().Add(24*time.Hour),
-		sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), &store.ListRecordsParams{
+		Project:    "delete-test",
+		From:       time.Now().Add(-24 * time.Hour),
+		To:         time.Now().Add(24 * time.Hour),
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if len(records) != 0 {
 		t.Errorf("Expected 0 records after project deletion, got %d", len(records))
 	}

@@ -280,7 +280,15 @@ func TestListRecords(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sortOrder := model.SortOrderDesc
-			result, err := store.ListRecords(context.Background(), project, tc.from, tc.to, sortOrder)
+			pagination, _ := model.NewPagination("100", "0")
+			result, err := store.ListRecords(context.Background(), &ListRecordsParams{
+				Project:    project,
+				From:       tc.from,
+				To:         tc.to,
+				SortOrder:  sortOrder,
+				Pagination: pagination,
+				Tags:       []string{},
+			})
 			if err != nil {
 				t.Fatalf("Failed to list records: %v", err)
 			}
@@ -365,7 +373,15 @@ func TestListRecordsWithSortOrder(t *testing.T) {
 			t.Fatalf("Failed to create sort order: %v", err)
 		}
 
-		result, err := store.ListRecords(context.Background(), project, from, to, sortOrder)
+		pagination, _ := model.NewPagination("100", "0")
+		result, err := store.ListRecords(context.Background(), &ListRecordsParams{
+			Project:    project,
+			From:       from,
+			To:         to,
+			SortOrder:  sortOrder,
+			Pagination: pagination,
+			Tags:       []string{},
+		})
 		if err != nil {
 			t.Fatalf("Failed to list records: %v", err)
 		}
@@ -390,7 +406,15 @@ func TestListRecordsWithSortOrder(t *testing.T) {
 			t.Fatalf("Failed to create sort order: %v", err)
 		}
 
-		result, err := store.ListRecords(context.Background(), project, from, to, sortOrder)
+		pagination, _ := model.NewPagination("100", "0")
+		result, err := store.ListRecords(context.Background(), &ListRecordsParams{
+			Project:    project,
+			From:       from,
+			To:         to,
+			SortOrder:  sortOrder,
+			Pagination: pagination,
+			Tags:       []string{},
+		})
 		if err != nil {
 			t.Fatalf("Failed to list records: %v", err)
 		}
@@ -415,7 +439,15 @@ func TestListRecordsWithSortOrder(t *testing.T) {
 			t.Fatalf("Failed to create sort order: %v", err)
 		}
 
-		result, err := store.ListRecords(context.Background(), project, from, to, sortOrder)
+		pagination, _ := model.NewPagination("100", "0")
+		result, err := store.ListRecords(context.Background(), &ListRecordsParams{
+			Project:    project,
+			From:       from,
+			To:         to,
+			SortOrder:  sortOrder,
+			Pagination: pagination,
+			Tags:       []string{},
+		})
 		if err != nil {
 			t.Fatalf("Failed to list records: %v", err)
 		}
@@ -486,7 +518,15 @@ func TestDeleteProject(t *testing.T) {
 
 	// プロジェクト1のレコード数を確認
 	sortOrder := model.SortOrderDesc
-	project1Records, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	project1Records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+		Project:    project1,
+		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list project1 records: %v", err)
 	}
@@ -501,7 +541,14 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1のレコードが存在しなくなっていることを確認
-	project1RecordsAfter, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
+	project1RecordsAfter, err := store.ListRecords(context.Background(), &ListRecordsParams{
+		Project:    project1,
+		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list project1 records after deletion: %v", err)
 	}
@@ -516,7 +563,14 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト2のレコードが残っていることを確認
-	project2Records, err := store.ListRecords(context.Background(), project2, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
+	project2Records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+		Project:    project2,
+		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list project2 records: %v", err)
 	}
@@ -640,7 +694,15 @@ func TestListRecordsWithTags(t *testing.T) {
 
 			// タグフィルタでレコードを取得
 			sortOrder := model.SortOrderDesc
-			records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tc.tags, sortOrder)
+			pagination, _ := model.NewPagination("100", "0")
+			records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+				Project:    project,
+				From:       fromTime,
+				To:         toTime,
+				SortOrder:  sortOrder,
+				Pagination: pagination,
+				Tags:       tc.tags,
+			})
 			if err != nil {
 				t.Fatalf("Failed to list records with tags: %v", err)
 			}
@@ -733,7 +795,15 @@ func TestListRecordsWithTagsAndSortOrder(t *testing.T) {
 			t.Fatalf("Failed to create sort order: %v", err)
 		}
 
-		records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tags, sortOrder)
+		pagination, _ := model.NewPagination("100", "0")
+		records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+			Project:    project,
+			From:       fromTime,
+			To:         toTime,
+			SortOrder:  sortOrder,
+			Pagination: pagination,
+			Tags:       tags,
+		})
 		if err != nil {
 			t.Fatalf("Failed to list records with tags: %v", err)
 		}
@@ -758,7 +828,15 @@ func TestListRecordsWithTagsAndSortOrder(t *testing.T) {
 			t.Fatalf("Failed to create sort order: %v", err)
 		}
 
-		records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tags, sortOrder)
+		pagination, _ := model.NewPagination("100", "0")
+		records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+			Project:    project,
+			From:       fromTime,
+			To:         toTime,
+			SortOrder:  sortOrder,
+			Pagination: pagination,
+			Tags:       tags,
+		})
 		if err != nil {
 			t.Fatalf("Failed to list records with tags: %v", err)
 		}
@@ -807,7 +885,15 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(1 * time.Hour)
 	sortOrder := model.SortOrderDesc
-	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"nonexistent"}, sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+		Project:    project,
+		From:       fromTime,
+		To:         toTime,
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{"nonexistent"},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list records with tags: %v", err)
 	}
@@ -817,8 +903,8 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 	}
 }
 
-// TestListRecordsWithTagsDateRange は日付範囲フィルタのテスト
-func TestListRecordsWithTagsDateRange(t *testing.T) {
+// TestListRecordsDateRange は日付範囲フィルタのテスト
+func TestListRecordsDateRange(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
 
@@ -851,7 +937,15 @@ func TestListRecordsWithTagsDateRange(t *testing.T) {
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(25 * time.Hour)
 	sortOrder := model.SortOrderDesc
-	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"work"}, sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+		Project:    project,
+		From:       fromTime,
+		To:         toTime,
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{"work"},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list records with tags: %v", err)
 	}
@@ -1197,8 +1291,15 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 
 	// 外部キー制約がないため、関連するレコードは残っている
 	sortOrder := model.SortOrderDesc
-	records, err := store.ListRecords(context.Background(), "test-project",
-		timestamp.Add(-1*time.Hour), timestamp.Add(1*time.Hour), sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
+		Project:    "test-project",
+		From:       timestamp.Add(-1 * time.Hour),
+		To:         timestamp.Add(1 * time.Hour),
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list records: %v", err)
 	}

@@ -472,17 +472,20 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// レコードの取得
-	var records []*model.Record
-  sortOrder := model.SortOrderDesc
-	if !params.Tags.IsEmpty() {
-		// タグフィルタありのレコード取得
-		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values(), sortOrder)
-	} else {
-		// タグフィルタなしのレコード取得
-		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), sortOrder)
+	// レコードの取得（ヒートマップ生成のためすべてのレコードが必要）
+	sortOrder := model.SortOrderDesc
+	pagination, _ := model.NewPagination("1000000", "0")
+
+	storeParams := &store.ListRecordsParams{
+		Project:    params.ProjectName.String(),
+		From:       params.DateRange.From(),
+		To:         params.DateRange.To(),
+		SortOrder:  sortOrder,
+		Pagination: pagination,
+		Tags:       params.Tags.Values(),
 	}
 
+	records, err := s.store.ListRecords(r.Context(), storeParams)
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
 		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
@@ -595,38 +598,27 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// レコードの取得
-	var records []*model.Record
-	if !params.Tags.IsEmpty() {
-		// タグフィルタありのレコード取得
-		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values(), params.SortOrder)
-	} else {
-		// タグフィルタなしのレコード取得
-		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.SortOrder)
+	// store.ListRecordsParams を作成
+	storeParams := &store.ListRecordsParams{
+		Project:    params.ProjectName.String(),
+		From:       params.DateRange.From(),
+		To:         params.DateRange.To(),
+		SortOrder:  params.SortOrder,
+		Pagination: params.Pagination,
+		Tags:       params.Tags.Values(),
 	}
 
+	// レコードの取得
+	records, err := s.store.ListRecords(r.Context(), storeParams)
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
 		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
 		return
 	}
 
-	// ページネーションの適用
-	totalRecords := len(records)
-	endIndex := params.Pagination.Offset() + params.Pagination.Limit()
-	endIndex = min(endIndex, totalRecords)
-
-	// 指定された範囲のレコードのみを抽出
-	var pagedRecords []*model.Record
-	if params.Pagination.Offset() < totalRecords {
-		pagedRecords = records[params.Pagination.Offset():endIndex]
-	} else {
-		pagedRecords = []*model.Record{} // offsetが範囲外の場合は空配列
-	}
-
 	// レスポンスの返却
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(pagedRecords); err != nil {
+	if err := json.NewEncoder(w).Encode(records); err != nil {
 		log.Printf("Error encoding response: %v", err)
 	}
 }

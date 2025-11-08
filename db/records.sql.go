@@ -274,12 +274,15 @@ LEFT JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
 GROUP BY r.id, r.project, r.value, r.timestamp
 ORDER BY r.timestamp
+LIMIT ? OFFSET ?
 `
 
 type ListRecordsParams struct {
 	Timestamp   string `db:"timestamp" json:"timestamp"`
 	Timestamp_2 string `db:"timestamp_2" json:"timestamp_2"`
 	Project     string `db:"project" json:"project"`
+	Limit       int64  `db:"limit" json:"limit"`
+	Offset      int64  `db:"offset" json:"offset"`
 }
 
 type ListRecordsRow struct {
@@ -293,7 +296,13 @@ type ListRecordsRow struct {
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 // Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
 func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listRecords, arg.Timestamp, arg.Timestamp_2, arg.Project)
+	rows, err := q.db.QueryContext(ctx, listRecords,
+		arg.Timestamp,
+		arg.Timestamp_2,
+		arg.Project,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -335,6 +344,7 @@ WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
 GROUP BY r.id, r.project, r.value, r.timestamp
 HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
 ORDER BY r.timestamp
+LIMIT ? OFFSET ?
 `
 
 type ListRecordsWithTagsParams struct {
@@ -343,6 +353,8 @@ type ListRecordsWithTagsParams struct {
 	Project     string   `db:"project" json:"project"`
 	Tags        []string `db:"tags" json:"tags"`
 	Column5     int64    `db:"column_5" json:"column_5"`
+	Limit       int64    `db:"limit" json:"limit"`
+	Offset      int64    `db:"offset" json:"offset"`
 }
 
 type ListRecordsWithTagsRow struct {
@@ -371,6 +383,8 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 		query = strings.Replace(query, "/*SLICE:tags*/?", "NULL", 1)
 	}
 	queryParams = append(queryParams, arg.Column5)
+	queryParams = append(queryParams, arg.Limit)
+	queryParams = append(queryParams, arg.Offset)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
