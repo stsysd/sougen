@@ -474,12 +474,13 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// レコードの取得
 	var records []*model.Record
+	sortOrder, _ := model.NewSortOrder("desc") // グラフ生成用のデフォルト並び順
 	if !params.Tags.IsEmpty() {
 		// タグフィルタありのレコード取得
-		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values())
+		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values(), sortOrder)
 	} else {
 		// タグフィルタなしのレコード取得
-		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To())
+		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), sortOrder)
 	}
 
 	if err != nil {
@@ -547,6 +548,7 @@ type ListRecordsParams struct {
 	DateRange   *model.DateRange
 	Tags        *model.Tags
 	Pagination  *model.Pagination
+	SortOrder   *model.SortOrder
 }
 
 // NewListRecordsParams creates parameters for record listing from HTTP request.
@@ -570,11 +572,17 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 		return nil, err
 	}
 
+	sortOrder, err := model.NewSortOrder(query.Get("order"))
+	if err != nil {
+		return nil, err
+	}
+
 	return &ListRecordsParams{
 		ProjectName: projectName,
 		DateRange:   dateRange,
 		Tags:        tags,
 		Pagination:  pagination,
+		SortOrder:   sortOrder,
 	}, nil
 }
 
@@ -591,10 +599,10 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	var records []*model.Record
 	if !params.Tags.IsEmpty() {
 		// タグフィルタありのレコード取得
-		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values())
+		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values(), params.SortOrder)
 	} else {
 		// タグフィルタなしのレコード取得
-		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To())
+		records, err = s.store.ListRecords(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.SortOrder)
 	}
 
 	if err != nil {

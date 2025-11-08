@@ -287,3 +287,42 @@ func parseInt(s string) (int, error) {
 	}
 	return value, nil
 }
+
+// SortOrder represents sorting order for records.
+type SortOrder struct {
+	value string // "asc" or "desc"
+}
+
+// NewSortOrder creates a new SortOrder value object.
+// Default is "desc" (newest first).
+func NewSortOrder(orderStr string) (*SortOrder, error) {
+	order := "desc" // Default to newest first
+
+	if orderStr != "" {
+		switch orderStr {
+		case "asc", "ASC":
+			order = "asc"
+		case "desc", "DESC":
+			order = "desc"
+		default:
+			return nil, fmt.Errorf("order must be 'asc' or 'desc'")
+		}
+	}
+
+	return &SortOrder{value: order}, nil
+}
+
+// IsAsc returns true if the order is ascending (oldest first).
+func (s *SortOrder) IsAsc() bool {
+	return s.value == "asc"
+}
+
+// IsDesc returns true if the order is descending (newest first).
+func (s *SortOrder) IsDesc() bool {
+	return s.value == "desc"
+}
+
+// String returns the order as a string ("asc" or "desc").
+func (s *SortOrder) String() string {
+	return s.value
+}

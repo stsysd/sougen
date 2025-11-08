@@ -279,7 +279,8 @@ func TestListRecords(t *testing.T) {
 	// テストの実行
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := store.ListRecords(context.Background(), project, tc.from, tc.to)
+			sortOrder, _ := model.NewSortOrder("desc")
+			result, err := store.ListRecords(context.Background(), project, tc.from, tc.to, sortOrder)
 			if err != nil {
 				t.Fatalf("Failed to list records: %v", err)
 			}
@@ -362,7 +363,8 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1のレコード数を確認
-	project1Records, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+	sortOrder, _ := model.NewSortOrder("desc")
+	project1Records, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
 	if err != nil {
 		t.Fatalf("Failed to list project1 records: %v", err)
 	}
@@ -377,7 +379,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1のレコードが存在しなくなっていることを確認
-	project1RecordsAfter, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+	project1RecordsAfter, err := store.ListRecords(context.Background(), project1, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
 	if err != nil {
 		t.Fatalf("Failed to list project1 records after deletion: %v", err)
 	}
@@ -386,7 +388,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト2のレコードが残っていることを確認
-	project2Records, err := store.ListRecords(context.Background(), project2, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC))
+	project2Records, err := store.ListRecords(context.Background(), project2, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
 	if err != nil {
 		t.Fatalf("Failed to list project2 records: %v", err)
 	}
@@ -503,7 +505,8 @@ func TestListRecordsWithTags(t *testing.T) {
 			toTime := baseTime.Add(5 * time.Hour)
 
 			// タグフィルタでレコードを取得
-			records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tc.tags)
+			sortOrder, _ := model.NewSortOrder("desc")
+			records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tc.tags, sortOrder)
 			if err != nil {
 				t.Fatalf("Failed to list records with tags: %v", err)
 			}
@@ -576,7 +579,8 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 	// 存在しないタグでフィルタ
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(1 * time.Hour)
-	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"nonexistent"})
+	sortOrder, _ := model.NewSortOrder("desc")
+	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"nonexistent"}, sortOrder)
 	if err != nil {
 		t.Fatalf("Failed to list records with tags: %v", err)
 	}
@@ -619,7 +623,8 @@ func TestListRecordsWithTagsDateRange(t *testing.T) {
 	// 最初の2日分のみを取得
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(25 * time.Hour)
-	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"work"})
+	sortOrder, _ := model.NewSortOrder("desc")
+	records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, []string{"work"}, sortOrder)
 	if err != nil {
 		t.Fatalf("Failed to list records with tags: %v", err)
 	}
@@ -960,8 +965,9 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 	}
 
 	// 外部キー制約がないため、関連するレコードは残っている
+	sortOrder, _ := model.NewSortOrder("desc")
 	records, err := store.ListRecords(context.Background(), "test-project",
-		timestamp.Add(-1*time.Hour), timestamp.Add(1*time.Hour))
+		timestamp.Add(-1*time.Hour), timestamp.Add(1*time.Hour), sortOrder)
 	if err != nil {
 		t.Fatalf("Failed to list records: %v", err)
 	}

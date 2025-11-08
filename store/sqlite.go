@@ -32,9 +32,9 @@ type RecordStore interface {
 	// DeleteRecordsUntil は指定日時より前のレコードを削除します。
 	DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error)
 	// ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
-	ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error)
+	ListRecords(ctx context.Context, project string, from, to time.Time, sortOrder *model.SortOrder) ([]*model.Record, error)
 	// ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
-	ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error)
+	ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string, sortOrder *model.SortOrder) ([]*model.Record, error)
 	// Close はストアの接続を閉じます。
 	Close() error
 }
@@ -278,7 +278,7 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 }
 
 // ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
-func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to time.Time) ([]*model.Record, error) {
+func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to time.Time, sortOrder *model.SortOrder) ([]*model.Record, error) {
 	// 日付の範囲を丸一日に設定（秒以下の精度を取り除く）
 	// fromは日付の始まりに設定
 	fromDate := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
@@ -327,14 +327,21 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to 
 		records = append(records, record)
 	}
 
+	// 降順の場合は結果を逆順にする
+	if sortOrder.IsDesc() {
+		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
+			records[i], records[j] = records[j], records[i]
+		}
+	}
+
 	return records, nil
 }
 
 // ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
-func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string) ([]*model.Record, error) {
+func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string, sortOrder *model.SortOrder) ([]*model.Record, error) {
 	// タグが指定されていない場合は通常のListRecordsを呼び出す
 	if len(tags) == 0 {
-		return s.ListRecords(ctx, project, from, to)
+		return s.ListRecords(ctx, project, from, to, sortOrder)
 	}
 
 	// 日付の範囲を丸一日に設定（秒以下の精度を取り除く）
@@ -385,6 +392,13 @@ func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, f
 			return nil, err
 		}
 		records = append(records, record)
+	}
+
+	// 降順の場合は結果を逆順にする
+	if sortOrder.IsDesc() {
+		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
+			records[i], records[j] = records[j], records[i]
+		}
 	}
 
 	return records, nil
