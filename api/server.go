@@ -474,7 +474,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 
 	// レコードの取得
 	var records []*model.Record
-	sortOrder, _ := model.NewSortOrder("desc") // グラフ生成用のデフォルト並び順
+  sortOrder := model.SortOrderDesc
 	if !params.Tags.IsEmpty() {
 		// タグフィルタありのレコード取得
 		records, err = s.store.ListRecordsWithTags(r.Context(), params.ProjectName.String(), params.DateRange.From(), params.DateRange.To(), params.Tags.Values(), sortOrder)

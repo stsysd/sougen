@@ -296,21 +296,25 @@ type SortOrder struct {
 // NewSortOrder creates a new SortOrder value object.
 // Default is "desc" (newest first).
 func NewSortOrder(orderStr string) (*SortOrder, error) {
-	order := "desc" // Default to newest first
-
 	if orderStr != "" {
 		switch orderStr {
 		case "asc", "ASC":
-			order = "asc"
+			return SortOrderAsc, nil
 		case "desc", "DESC":
-			order = "desc"
+			return SortOrderDesc, nil
 		default:
 			return nil, fmt.Errorf("order must be 'asc' or 'desc'")
 		}
 	}
 
-	return &SortOrder{value: order}, nil
+  // Default to descending order
+	return SortOrderDesc, nil
 }
+
+var (
+  SortOrderAsc  = &SortOrder{value:"asc"}
+  SortOrderDesc = &SortOrder{value:"desc"}
+)
 
 // IsAsc returns true if the order is ascending (oldest first).
 func (s *SortOrder) IsAsc() bool {
