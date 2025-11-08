@@ -450,13 +450,13 @@ func (s *SQLiteStore) DeleteProject(ctx context.Context, projectName string) err
 	queriesWithTx := s.queries.WithTx(tx)
 
 	// レコードを削除
-	err = queriesWithTx.DeleteProject(context.Background(), projectName)
+	err = queriesWithTx.DeleteProject(ctx, projectName)
 	if err != nil {
 		return fmt.Errorf("failed to delete project records: %w", err)
 	}
 
 	// プロジェクトエンティティを削除
-	err = queriesWithTx.DeleteProjectEntity(context.Background(), projectName)
+	err = queriesWithTx.DeleteProjectEntity(ctx, projectName)
 	if err != nil {
 		return fmt.Errorf("failed to delete project entity: %w", err)
 	}
