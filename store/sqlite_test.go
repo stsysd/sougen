@@ -509,6 +509,12 @@ func TestDeleteProject(t *testing.T) {
 		t.Errorf("Expected 0 records for project1 after deletion, got %d", len(project1RecordsAfter))
 	}
 
+	// プロジェクト1のエンティティが削除されていることを確認
+	_, err = store.GetProject(context.Background(), project1)
+	if err == nil {
+		t.Errorf("Expected error when getting deleted project, got nil")
+	}
+
 	// プロジェクト2のレコードが残っていることを確認
 	project2Records, err := store.ListRecords(context.Background(), project2, time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), sortOrder)
 	if err != nil {
@@ -516,6 +522,12 @@ func TestDeleteProject(t *testing.T) {
 	}
 	if len(project2Records) != 2 {
 		t.Errorf("Expected 2 records for project2, got %d", len(project2Records))
+	}
+
+	// プロジェクト2のエンティティが残っていることを確認
+	_, err = store.GetProject(context.Background(), project2)
+	if err != nil {
+		t.Errorf("Expected project2 to still exist, got error: %v", err)
 	}
 
 	// 存在しないプロジェクトを削除しても問題ないことを確認
