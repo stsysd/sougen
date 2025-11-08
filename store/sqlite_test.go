@@ -312,6 +312,128 @@ func TestListRecords(t *testing.T) {
 	}
 }
 
+func TestListRecordsWithSortOrder(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("sort-test", "Sort test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	project := "sort-test"
+
+	// テスト用に5件のレコードを作成（古い順に作成）
+	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+	var createdRecords []*model.Record
+
+	for i := 0; i < 5; i++ {
+		timestamp := baseTime.Add(time.Duration(i) * time.Hour)
+		record, err := model.NewRecord(timestamp, project, i+1, nil)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+
+		err = store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to store record: %v", err)
+		}
+		createdRecords = append(createdRecords, record)
+	}
+
+	// 昇順の期待値（作成順と同じ）
+	expectedAscOrder := createdRecords
+
+	// 降順の期待値（作成順の逆）
+	expectedDescOrder := make([]*model.Record, 5)
+	for i := 0; i < 5; i++ {
+		expectedDescOrder[i] = createdRecords[4-i]
+	}
+
+	from := baseTime.AddDate(0, 0, -1)
+	to := baseTime.AddDate(0, 0, 1)
+
+	// テストケース1: 昇順（oldest first）
+	t.Run("Ascending Order", func(t *testing.T) {
+		sortOrder, err := model.NewSortOrder("asc")
+		if err != nil {
+			t.Fatalf("Failed to create sort order: %v", err)
+		}
+
+		result, err := store.ListRecords(context.Background(), project, from, to, sortOrder)
+		if err != nil {
+			t.Fatalf("Failed to list records: %v", err)
+		}
+
+		if len(result) != 5 {
+			t.Errorf("Expected 5 records, got %d", len(result))
+			return
+		}
+
+		// 昇順になっているか確認
+		for i := 0; i < 5; i++ {
+			if result[i].ID != expectedAscOrder[i].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected oldest first)", i)
+			}
+		}
+	})
+
+	// テストケース2: 降順（newest first）
+	t.Run("Descending Order", func(t *testing.T) {
+		sortOrder, err := model.NewSortOrder("desc")
+		if err != nil {
+			t.Fatalf("Failed to create sort order: %v", err)
+		}
+
+		result, err := store.ListRecords(context.Background(), project, from, to, sortOrder)
+		if err != nil {
+			t.Fatalf("Failed to list records: %v", err)
+		}
+
+		if len(result) != 5 {
+			t.Errorf("Expected 5 records, got %d", len(result))
+			return
+		}
+
+		// 降順になっているか確認
+		for i := 0; i < 5; i++ {
+			if result[i].ID != expectedDescOrder[i].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected newest first)", i)
+			}
+		}
+	})
+
+	// テストケース3: デフォルト（降順）
+	t.Run("Default Order", func(t *testing.T) {
+		sortOrder, err := model.NewSortOrder("")
+		if err != nil {
+			t.Fatalf("Failed to create sort order: %v", err)
+		}
+
+		result, err := store.ListRecords(context.Background(), project, from, to, sortOrder)
+		if err != nil {
+			t.Fatalf("Failed to list records: %v", err)
+		}
+
+		if len(result) != 5 {
+			t.Errorf("Expected 5 records, got %d", len(result))
+			return
+		}
+
+		// デフォルトは降順（newest first）
+		for i := 0; i < 5; i++ {
+			if result[i].ID != expectedDescOrder[i].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected newest first by default)", i)
+			}
+		}
+	})
+}
+
 func TestDeleteProject(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -549,6 +671,99 @@ func TestListRecordsWithTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestListRecordsWithTagsAndSortOrder はタグフィルタとソート順序の組み合わせテスト
+func TestListRecordsWithTagsAndSortOrder(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("tag-sort-test", "Tag sort test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	project := "tag-sort-test"
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// "work" タグを持つ4件のレコードを作成（古い順に作成）
+	var workRecords []*model.Record
+	for i := 0; i < 4; i++ {
+		timestamp := baseTime.Add(time.Duration(i) * time.Hour)
+		record, _ := model.NewRecord(timestamp, project, i+1, []string{"work"})
+		err := store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+		workRecords = append(workRecords, record)
+	}
+
+	// 別のタグを持つレコードも追加（フィルタされないことを確認）
+	otherRecord, _ := model.NewRecord(baseTime.Add(5*time.Hour), project, 100, []string{"personal"})
+	err = store.CreateRecord(context.Background(), otherRecord)
+	if err != nil {
+		t.Fatalf("Failed to create other record: %v", err)
+	}
+
+	fromTime := baseTime.Add(-1 * time.Hour)
+	toTime := baseTime.Add(10 * time.Hour)
+	tags := []string{"work"}
+
+	// テストケース1: 昇順（oldest first）
+	t.Run("Ascending Order", func(t *testing.T) {
+		sortOrder, err := model.NewSortOrder("asc")
+		if err != nil {
+			t.Fatalf("Failed to create sort order: %v", err)
+		}
+
+		records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tags, sortOrder)
+		if err != nil {
+			t.Fatalf("Failed to list records with tags: %v", err)
+		}
+
+		if len(records) != 4 {
+			t.Errorf("Expected 4 records with 'work' tag, got %d", len(records))
+			return
+		}
+
+		// 昇順になっているか確認
+		for i := 0; i < 4; i++ {
+			if records[i].ID != workRecords[i].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected oldest first)", i)
+			}
+		}
+	})
+
+	// テストケース2: 降順（newest first）
+	t.Run("Descending Order", func(t *testing.T) {
+		sortOrder, err := model.NewSortOrder("desc")
+		if err != nil {
+			t.Fatalf("Failed to create sort order: %v", err)
+		}
+
+		records, err := store.ListRecordsWithTags(context.Background(), project, fromTime, toTime, tags, sortOrder)
+		if err != nil {
+			t.Fatalf("Failed to list records with tags: %v", err)
+		}
+
+		if len(records) != 4 {
+			t.Errorf("Expected 4 records with 'work' tag, got %d", len(records))
+			return
+		}
+
+		// 降順になっているか確認
+		for i := 0; i < 4; i++ {
+			expectedIndex := 3 - i
+			if records[i].ID != workRecords[expectedIndex].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected newest first)", i)
+			}
+		}
+	})
 }
 
 // TestListRecordsWithTagsEmptyResult は空の結果のテスト

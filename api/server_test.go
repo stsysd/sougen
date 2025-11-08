@@ -1065,6 +1065,171 @@ func TestListRecordsWithPagination(t *testing.T) {
 	})
 }
 
+// TestListRecordsWithSortOrder はソート順序のテスト
+func TestListRecordsWithSortOrder(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+
+	// プロジェクト名
+	projectName := "sort-order-test"
+
+	// テスト用に5件のレコードを作成（古い順に作成）
+	var expectedAscOrder []*model.Record
+	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+
+	for i := 0; i < 5; i++ {
+		recordTime := baseTime.Add(time.Duration(i) * time.Hour)
+		record, _ := model.NewRecord(recordTime, projectName, i+1, nil)
+		mockStore.CreateRecord(context.Background(), record)
+		expectedAscOrder = append(expectedAscOrder, record)
+	}
+
+	// 降順の期待値（昇順の逆）
+	expectedDescOrder := make([]*model.Record, 5)
+	for i := 0; i < 5; i++ {
+		expectedDescOrder[i] = expectedAscOrder[4-i]
+	}
+
+	server := NewServer(mockStore, newTestConfig())
+
+	// ケース1: order未指定（デフォルトは降順=newest first）
+	t.Run("Default Order (Descending)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var records []*model.Record
+		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(records) != 5 {
+			t.Errorf("Expected 5 records, got %d", len(records))
+			return
+		}
+
+		// 降順（newest first）になっているか確認
+		for i := 0; i < 5; i++ {
+			if records[i].ID != expectedDescOrder[i].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected newest first)", i)
+			}
+		}
+	})
+
+	// ケース2: order=desc で明示的に降順指定
+	t.Run("Explicit Descending Order", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?order=desc", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var records []*model.Record
+		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(records) != 5 {
+			t.Errorf("Expected 5 records, got %d", len(records))
+			return
+		}
+
+		// 降順（newest first）になっているか確認
+		for i := 0; i < 5; i++ {
+			if records[i].ID != expectedDescOrder[i].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected newest first)", i)
+			}
+		}
+	})
+
+	// ケース3: order=asc で昇順指定（oldest first）
+	t.Run("Ascending Order (Oldest First)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?order=asc", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var records []*model.Record
+		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(records) != 5 {
+			t.Errorf("Expected 5 records, got %d", len(records))
+			return
+		}
+
+		// 昇順（oldest first）になっているか確認
+		for i := 0; i < 5; i++ {
+			if records[i].ID != expectedAscOrder[i].ID {
+				t.Errorf("Record at index %d has incorrect ID (expected oldest first)", i)
+			}
+		}
+	})
+
+	// ケース4: 大文字のASCも受け付ける
+	t.Run("Uppercase ASC", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?order=ASC", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var records []*model.Record
+		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(records) != 5 {
+			t.Errorf("Expected 5 records, got %d", len(records))
+			return
+		}
+
+		// 昇順になっているか確認
+		for i := 0; i < 5; i++ {
+			if records[i].ID != expectedAscOrder[i].ID {
+				t.Errorf("Record at index %d has incorrect ID", i)
+			}
+		}
+	})
+
+	// ケース5: 不正なorder値でエラー
+	t.Run("Invalid Order Value", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?order=invalid", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}
+
 // TestDeleteProject はプロジェクト削除エンドポイントのテスト
 func TestDeleteProject(t *testing.T) {
 	store := NewMockRecordStore()
