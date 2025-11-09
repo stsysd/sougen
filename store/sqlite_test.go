@@ -280,7 +280,7 @@ func TestListRecords(t *testing.T) {
 	// テストの実行
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pagination, _ := model.NewPagination("100", "0")
+			pagination, _ := model.NewCursorPagination("100", "")
 			result, err := store.ListRecords(context.Background(), &ListRecordsParams{
 				Project:    project,
 				From:       tc.from,
@@ -371,7 +371,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1のレコード数を確認
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewCursorPagination("100", "")
 	project1Records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    project1,
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -543,7 +543,7 @@ func TestListRecordsWithTags(t *testing.T) {
 			toTime := baseTime.Add(5 * time.Hour)
 
 			// タグフィルタでレコードを取得
-			pagination, _ := model.NewPagination("100", "0")
+			pagination, _ := model.NewCursorPagination("100", "")
 			records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 				Project:    project,
 				From:       fromTime,
@@ -616,7 +616,7 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 	// 存在しないタグでフィルタ
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(1 * time.Hour)
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewCursorPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    project,
 		From:       fromTime,
@@ -666,7 +666,7 @@ func TestListRecordsDateRange(t *testing.T) {
 	// 最初の2日分のみを取得
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(25 * time.Hour)
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewCursorPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    project,
 		From:       fromTime,
@@ -893,8 +893,7 @@ func TestListProjects(t *testing.T) {
 	}
 
 	// プロジェクト一覧を取得
-	pagination, _ := model.NewPagination("100", "0")
-	params := &ListProjectsParams{Pagination: pagination}
+	params := &ListProjectsParams{Limit: 100, Offset: 0}
 	retrievedProjects, err := store.ListProjects(context.Background(), params)
 	if err != nil {
 		t.Fatalf("Failed to list projects: %v", err)
@@ -930,8 +929,7 @@ func TestListEmptyProjects(t *testing.T) {
 	defer cleanup()
 
 	// プロジェクト一覧を取得（空のはず）
-	pagination, _ := model.NewPagination("100", "0")
-	params := &ListProjectsParams{Pagination: pagination}
+	params := &ListProjectsParams{Limit: 100, Offset: 0}
 	projects, err := store.ListProjects(context.Background(), params)
 	if err != nil {
 		t.Fatalf("Failed to list projects: %v", err)
@@ -1018,7 +1016,7 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 	}
 
 	// 外部キー制約がないため、関連するレコードは残っている
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewCursorPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    "test-project",
 		From:       timestamp.Add(-1 * time.Hour),

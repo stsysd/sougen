@@ -272,17 +272,21 @@ SELECT
 FROM records r
 LEFT JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+  AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
 GROUP BY r.id, r.project, r.value, r.timestamp
-ORDER BY r.timestamp DESC
-LIMIT ? OFFSET ?
+ORDER BY r.timestamp DESC, r.id
+LIMIT ?
 `
 
 type ListRecordsParams struct {
-	Timestamp   string `db:"timestamp" json:"timestamp"`
-	Timestamp_2 string `db:"timestamp_2" json:"timestamp_2"`
-	Project     string `db:"project" json:"project"`
-	Limit       int64  `db:"limit" json:"limit"`
-	Offset      int64  `db:"offset" json:"offset"`
+	Timestamp   string      `db:"timestamp" json:"timestamp"`
+	Timestamp_2 string      `db:"timestamp_2" json:"timestamp_2"`
+	Project     string      `db:"project" json:"project"`
+	Column4     interface{} `db:"column_4" json:"column_4"`
+	Timestamp_3 string      `db:"timestamp_3" json:"timestamp_3"`
+	Timestamp_4 string      `db:"timestamp_4" json:"timestamp_4"`
+	ID          string      `db:"id" json:"id"`
+	Limit       int64       `db:"limit" json:"limit"`
 }
 
 type ListRecordsRow struct {
@@ -295,13 +299,17 @@ type ListRecordsRow struct {
 
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 // Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
+// Cursor-based pagination: uses anchor_timestamp and anchor_id for pagination
 func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRecords,
 		arg.Timestamp,
 		arg.Timestamp_2,
 		arg.Project,
+		arg.Column4,
+		arg.Timestamp_3,
+		arg.Timestamp_4,
+		arg.ID,
 		arg.Limit,
-		arg.Offset,
 	)
 	if err != nil {
 		return nil, err
@@ -341,20 +349,24 @@ FROM records r
 INNER JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
   AND t.tag IN (/*SLICE:tags*/?)
+  AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
 GROUP BY r.id, r.project, r.value, r.timestamp
 HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
-ORDER BY r.timestamp DESC
-LIMIT ? OFFSET ?
+ORDER BY r.timestamp DESC, r.id
+LIMIT ?
 `
 
 type ListRecordsWithTagsParams struct {
-	Timestamp   string   `db:"timestamp" json:"timestamp"`
-	Timestamp_2 string   `db:"timestamp_2" json:"timestamp_2"`
-	Project     string   `db:"project" json:"project"`
-	Tags        []string `db:"tags" json:"tags"`
-	Column5     int64    `db:"column_5" json:"column_5"`
-	Limit       int64    `db:"limit" json:"limit"`
-	Offset      int64    `db:"offset" json:"offset"`
+	Timestamp   string      `db:"timestamp" json:"timestamp"`
+	Timestamp_2 string      `db:"timestamp_2" json:"timestamp_2"`
+	Project     string      `db:"project" json:"project"`
+	Tags        []string    `db:"tags" json:"tags"`
+	Column5     interface{} `db:"column_5" json:"column_5"`
+	Timestamp_3 string      `db:"timestamp_3" json:"timestamp_3"`
+	Timestamp_4 string      `db:"timestamp_4" json:"timestamp_4"`
+	ID          string      `db:"id" json:"id"`
+	Column9     int64       `db:"column_9" json:"column_9"`
+	Limit       int64       `db:"limit" json:"limit"`
 }
 
 type ListRecordsWithTagsRow struct {
@@ -368,6 +380,7 @@ type ListRecordsWithTagsRow struct {
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 // Returns records that have all of the specified tags
 // Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
+// Cursor-based pagination: uses anchor_timestamp and anchor_id for pagination
 func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]ListRecordsWithTagsRow, error) {
 	query := listRecordsWithTags
 	var queryParams []interface{}
@@ -383,8 +396,11 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 		query = strings.Replace(query, "/*SLICE:tags*/?", "NULL", 1)
 	}
 	queryParams = append(queryParams, arg.Column5)
+	queryParams = append(queryParams, arg.Timestamp_3)
+	queryParams = append(queryParams, arg.Timestamp_4)
+	queryParams = append(queryParams, arg.ID)
+	queryParams = append(queryParams, arg.Column9)
 	queryParams = append(queryParams, arg.Limit)
-	queryParams = append(queryParams, arg.Offset)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err

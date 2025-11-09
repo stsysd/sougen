@@ -20,7 +20,8 @@ import (
 
 // ListProjectsParams はプロジェクト一覧取得のパラメータです。
 type ListProjectsParams struct {
-	Pagination *model.Pagination
+	Limit  int
+	Offset int
 }
 
 // ListRecordsParams はレコード一覧取得のパラメータです。
@@ -28,7 +29,7 @@ type ListRecordsParams struct {
 	Project    string
 	From       time.Time
 	To         time.Time
-	Pagination *model.Pagination
+	Pagination *model.CursorPagination
 	Tags       []string
 }
 
@@ -311,7 +312,27 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	toStr := toDate.Format(time.RFC3339)
 
 	limit := int64(params.Pagination.Limit())
-	offset := int64(params.Pagination.Offset())
+
+	// カーソルベースのページネーションパラメータ
+	var cursorID string
+	var cursorTimestamp string
+	var cursorColumn interface{}
+	if cursor := params.Pagination.Cursor(); cursor != nil {
+		// カーソルが指定されている場合、そのレコードの情報を取得
+		cursorIDStr := cursor.String()
+		cursorRecord, err := s.queries.GetRecord(ctx, cursorIDStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cursor record: %w", err)
+		}
+		cursorID = cursorIDStr
+		cursorTimestamp = cursorRecord.Timestamp
+		cursorColumn = nil // NULL ではなく、有効な値として扱う
+	} else {
+		// カーソルが指定されていない場合は NULL
+		cursorColumn = nil
+		cursorTimestamp = ""
+		cursorID = ""
+	}
 
 	var records []*model.Record
 
@@ -321,8 +342,11 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 			Timestamp:   fromStr,
 			Timestamp_2: toStr,
 			Project:     params.Project,
+			Column4:     cursorColumn,
+			Timestamp_3: cursorTimestamp,
+			Timestamp_4: cursorTimestamp,
+			ID:          cursorID,
 			Limit:       limit,
-			Offset:      offset,
 		})
 		if err != nil {
 			return nil, err
@@ -357,9 +381,12 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 			Timestamp_2: toStr,
 			Project:     params.Project,
 			Tags:        params.Tags,
-			Column5:     int64(len(params.Tags)),
+			Column5:     cursorColumn,
+			Timestamp_3: cursorTimestamp,
+			Timestamp_4: cursorTimestamp,
+			ID:          cursorID,
+			Column9:     int64(len(params.Tags)),
 			Limit:       limit,
-			Offset:      offset,
 		})
 		if err != nil {
 			return nil, err
@@ -398,10 +425,10 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error] {
 	return func(yield func(*model.Record, error) bool) {
 		const pageSize = 1000
-		offset := 0
+		var cursor *uuid.UUID
 
 		for {
-			pagination := model.NewPaginationWithValues(pageSize, offset)
+			pagination := model.NewCursorPaginationWithValues(pageSize, cursor)
 
 			listParams := &ListRecordsParams{
 				Project:    params.Project,
@@ -431,7 +458,9 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 				break
 			}
 
-			offset += pageSize
+			// 次のページのためのカーソルを設定
+			lastRecordID := records[len(records)-1].ID
+			cursor = &lastRecordID
 		}
 	}
 }
@@ -651,8 +680,8 @@ func (s *SQLiteStore) DeleteProjectEntity(ctx context.Context, name string) erro
 
 // ListProjects はすべてのプロジェクトを取得します。
 func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsParams) ([]*model.Project, error) {
-	limit := int64(params.Pagination.Limit())
-	offset := int64(params.Pagination.Offset())
+	limit := int64(params.Limit)
+	offset := int64(params.Offset)
 
 	// sqlcで生成されたクエリを使用
 	dbProjects, err := s.queries.ListProjects(ctx, db.ListProjectsParams{
