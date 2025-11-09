@@ -1054,7 +1054,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 		}
 
 		// 最初の3件のレコードが正しいか確認
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			if records[i].ID != allRecords[i].ID {
 				t.Errorf("Record at index %d has incorrect ID", i)
 			}
@@ -1084,7 +1084,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 		}
 
 		// オフセット3から4件のレコードが正しいか確認
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			if records[i].ID != allRecords[i+3].ID {
 				t.Errorf("Record at index %d has incorrect ID", i)
 			}
@@ -1415,14 +1415,14 @@ func TestBulkDeleteRecords(t *testing.T) {
 			mockStore := NewMockRecordStore()
 
 			// project1のレコードを作成（5件）
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
 				record, _ := model.NewRecord(recordTime, project1, i+1, nil)
 				mockStore.CreateRecord(context.Background(), record)
 			}
 
 			// project2のレコードを作成（3件）
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
 				record, _ := model.NewRecord(recordTime, project2, i+10, nil)
 				mockStore.CreateRecord(context.Background(), record)
@@ -2113,7 +2113,7 @@ func TestListProjectsWithPagination(t *testing.T) {
 
 	// テスト用に5件のプロジェクトを作成
 	var allProjects []*model.Project
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		projectName := fmt.Sprintf("project-%d", i)
 		description := fmt.Sprintf("Project %d", i)
 		project, _ := model.NewProject(projectName, description)
