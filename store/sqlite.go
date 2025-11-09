@@ -20,7 +20,7 @@ import (
 
 // ListProjectsParams はプロジェクト一覧取得のパラメータです。
 type ListProjectsParams struct {
-	Pagination *model.CursorPagination
+	Pagination *model.Pagination
 }
 
 // ListRecordsParams はレコード一覧取得のパラメータです。
@@ -28,7 +28,7 @@ type ListRecordsParams struct {
 	Project    string
 	From       time.Time
 	To         time.Time
-	Pagination *model.CursorPagination
+	Pagination *model.Pagination
 	Tags       []string
 }
 
@@ -427,7 +427,7 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 		var cursor *string
 
 		for {
-			pagination := model.NewCursorPaginationWithValues(pageSize, cursor)
+			pagination := model.NewPaginationWithValues(pageSize, cursor)
 
 			listParams := &ListRecordsParams{
 				Project:    params.Project,

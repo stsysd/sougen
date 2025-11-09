@@ -545,7 +545,7 @@ type ListRecordsParams struct {
 	ProjectName *model.ProjectName
 	DateRange   *model.DateRange
 	Tags        *model.Tags
-	Pagination  *model.CursorPagination
+	Pagination  *model.Pagination
 }
 
 // NewListRecordsParams creates parameters for record listing from HTTP request.
@@ -564,7 +564,7 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 
 	tags := model.NewTags(query.Get("tags"))
 
-	pagination, err := model.NewCursorPagination(query.Get("limit"), query.Get("cursor"))
+	pagination, err := model.NewPagination(query.Get("limit"), query.Get("cursor"))
 	if err != nil {
 		return nil, err
 	}
@@ -616,7 +616,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 
 	// レコードの取得（limit+1 件取得して次ページの有無を判定）
 	originalLimit := params.Pagination.Limit()
-	storeParams.Pagination = model.NewCursorPaginationWithValues(originalLimit+1, params.Pagination.Cursor())
+	storeParams.Pagination = model.NewPaginationWithValues(originalLimit+1, params.Pagination.Cursor())
 
 	records, err := s.store.ListRecords(r.Context(), storeParams)
 	if err != nil {
@@ -704,14 +704,14 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 // ListProjectsParams はプロジェクト一覧取得のパラメータです。
 type ListProjectsParams struct {
-	Pagination *model.CursorPagination
+	Pagination *model.Pagination
 }
 
 // NewListProjectsParams はリクエストからプロジェクト一覧取得のパラメータを作成します。
 func NewListProjectsParams(r *http.Request) (*ListProjectsParams, error) {
 	query := r.URL.Query()
 
-	pagination, err := model.NewCursorPagination(query.Get("limit"), query.Get("cursor"))
+	pagination, err := model.NewPagination(query.Get("limit"), query.Get("cursor"))
 	if err != nil {
 		return nil, err
 	}
@@ -745,7 +745,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	// プロジェクトの取得（limit+1 件取得して次ページの有無を判定）
 	originalLimit := params.Pagination.Limit()
 	storeParams := &store.ListProjectsParams{
-		Pagination: model.NewCursorPaginationWithValues(originalLimit+1, params.Pagination.Cursor()),
+		Pagination: model.NewPaginationWithValues(originalLimit+1, params.Pagination.Cursor()),
 	}
 
 	projects, err := projectStore.ListProjects(r.Context(), storeParams)

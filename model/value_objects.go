@@ -227,20 +227,14 @@ func (v *Value) Int() int {
 	return v.value
 }
 
-// Pagination represents pagination parameters value object.
+// Pagination represents cursor-based pagination parameters for records and projects.
 type Pagination struct {
-	limit  int
-	offset int
-}
-
-// CursorPagination represents cursor-based pagination parameters for records and projects.
-type CursorPagination struct {
 	limit  int
 	cursor *string // Cursor for pagination (nil means start from the beginning)
 }
 
-// NewCursorPagination creates a new cursor-based pagination value object.
-func NewCursorPagination(limitStr, cursorStr string) (*CursorPagination, error) {
+// NewPagination creates a new cursor-based pagination value object.
+func NewPagination(limitStr, cursorStr string) (*Pagination, error) {
 	limit := 100 // Default value
 
 	// Process limit parameter
@@ -264,65 +258,13 @@ func NewCursorPagination(limitStr, cursorStr string) (*CursorPagination, error) 
 		cursor = &cursorStr
 	}
 
-	return &CursorPagination{limit: limit, cursor: cursor}, nil
+	return &Pagination{limit: limit, cursor: cursor}, nil
 }
 
-// NewCursorPaginationWithValues creates a CursorPagination directly from values (for internal use).
+// NewPaginationWithValues creates a Pagination directly from values (for internal use).
 // No validation is performed on the values.
-func NewCursorPaginationWithValues(limit int, cursor *string) *CursorPagination {
-	return &CursorPagination{limit: limit, cursor: cursor}
-}
-
-// Limit returns the limit value.
-func (p *CursorPagination) Limit() int {
-	return p.limit
-}
-
-// Cursor returns the cursor string for cursor-based pagination.
-// Returns nil if no cursor is set (i.e., start from the beginning).
-func (p *CursorPagination) Cursor() *string {
-	return p.cursor
-}
-
-// NewPagination creates a new pagination value object.
-func NewPagination(limitStr, offsetStr string) (*Pagination, error) {
-	limit := 100 // Default value
-	offset := 0  // Default value
-
-	// Process limit parameter
-	if limitStr != "" {
-		parsedLimit, err := parseInt(limitStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid limit parameter: must be a positive integer")
-		}
-		if parsedLimit <= 0 {
-			return nil, fmt.Errorf("limit must be greater than 0")
-		}
-		if parsedLimit > 1000 { // Set upper limit
-			parsedLimit = 1000
-		}
-		limit = parsedLimit
-	}
-
-	// Process offset parameter
-	if offsetStr != "" {
-		parsedOffset, err := parseInt(offsetStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid offset parameter: must be a non-negative integer")
-		}
-		if parsedOffset < 0 {
-			return nil, fmt.Errorf("offset must be non-negative")
-		}
-		offset = parsedOffset
-	}
-
-	return &Pagination{limit: limit, offset: offset}, nil
-}
-
-// NewPaginationWithValues creates a Pagination directly from integer values (for internal use).
-// No validation is performed on the values.
-func NewPaginationWithValues(limit, offset int) *Pagination {
-	return &Pagination{limit: limit, offset: offset}
+func NewPaginationWithValues(limit int, cursor *string) *Pagination {
+	return &Pagination{limit: limit, cursor: cursor}
 }
 
 // Limit returns the limit value.
@@ -330,9 +272,10 @@ func (p *Pagination) Limit() int {
 	return p.limit
 }
 
-// Offset returns the offset value.
-func (p *Pagination) Offset() int {
-	return p.offset
+// Cursor returns the cursor string for cursor-based pagination.
+// Returns nil if no cursor is set (i.e., start from the beginning).
+func (p *Pagination) Cursor() *string {
+	return p.cursor
 }
 
 // parseInt converts a string to an integer and handles errors.

@@ -1196,7 +1196,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクトのレコードが削除されたことを確認
-	pagination, _ := model.NewCursorPagination("100", "")
+	pagination, _ := model.NewPagination("100", "")
 	testRecords, err := mockStore.ListRecords(context.Background(), &store.ListRecordsParams{
 		Project:    "test",
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -2018,7 +2018,7 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 	}
 
 	// レコードが削除されたことを確認
-	pagination, _ := model.NewCursorPagination("100", "")
+	pagination, _ := model.NewPagination("100", "")
 	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), &store.ListRecordsParams{
 		Project:    "delete-test",
 		From:       time.Now().Add(-24 * time.Hour),
