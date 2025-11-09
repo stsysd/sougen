@@ -338,7 +338,7 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	projectName := "exercise"
 
 	// テストリクエストデータ
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		"value":     1,
 	}
@@ -403,7 +403,7 @@ func TestCreateRecordWithoutTimestamp(t *testing.T) {
 	projectName := "exercise"
 
 	// timestampを省略したテストリクエストデータ
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value": 1,
 		// timestampは意図的に省略
 	}
@@ -470,7 +470,7 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 	projectName := "exercise"
 
 	// valueを省略したテストリクエストデータ
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		// valueは意図的に省略
 	}
@@ -1451,7 +1451,7 @@ func TestBulkDeleteRecords(t *testing.T) {
 			}
 
 			// レスポンスのパース
-			var response map[string]interface{}
+			var response map[string]any
 			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
 			}
@@ -1513,7 +1513,7 @@ func TestCreateRecordWithTags(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストボディ
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		"value":     5,
 		"tags":      []string{"work", "important", "urgent"},
@@ -1566,7 +1566,7 @@ func TestCreateRecordWithEmptyTags(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストボディ（空のタグ配列）
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		"value":     3,
 		"tags":      []string{},
@@ -1741,7 +1741,7 @@ func TestCreateProjectEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// テストデータ
-	projectData := map[string]interface{}{
+	projectData := map[string]any{
 		"name":        "test-project",
 		"description": "Test project description",
 	}
@@ -1798,7 +1798,7 @@ func TestCreateDuplicateProjectEndpoint(t *testing.T) {
 	mockStore.MockProjectStore.CreateProject(context.Background(), project)
 
 	// 同じ名前のプロジェクトを作成しようとする
-	projectData := map[string]interface{}{
+	projectData := map[string]any{
 		"name":        "duplicate",
 		"description": "Second project",
 	}
@@ -1885,7 +1885,7 @@ func TestUpdateProjectEndpoint(t *testing.T) {
 	mockStore.MockProjectStore.CreateProject(context.Background(), project)
 
 	// 更新データ
-	updateData := map[string]interface{}{
+	updateData := map[string]any{
 		"description": "Updated description",
 	}
 

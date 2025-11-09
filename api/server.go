@@ -868,7 +868,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error deleting project: %v", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		errorResp := map[string]interface{}{
+		errorResp := map[string]any{
 			"error": fmt.Sprintf("Failed to delete project: %v", err),
 			"code":  500,
 		}
