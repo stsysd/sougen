@@ -10,6 +10,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -93,13 +94,8 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 		if len(params.Tags) > 0 {
 			tagMatch := false
 			for _, filterTag := range params.Tags {
-				for _, recordTag := range r.Tags {
-					if recordTag == filterTag {
-						tagMatch = true
-						break
-					}
-				}
-				if tagMatch {
+				if slices.Contains(r.Tags, filterTag) {
+					tagMatch = true
 					break
 				}
 			}
