@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -207,7 +208,7 @@ func TestListRecords(t *testing.T) {
 	nextWeek := now.AddDate(0, 0, 7)
 
 	// テスト用レコードを作成
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		// 1日ずつずらしたレコードを作成
 		timestamp := yesterday.AddDate(0, 0, i)
 		record, err := model.NewRecord(timestamp, project, i+1, nil)
@@ -348,7 +349,7 @@ func TestDeleteProject(t *testing.T) {
 	now := time.Now()
 
 	// プロジェクト1用のレコードを3つ作成
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		record, err := model.NewRecord(now.AddDate(0, 0, i), project1, i+1, nil)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
@@ -359,7 +360,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト2用のレコードを2つ作成
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		record, err := model.NewRecord(now.AddDate(0, 0, i), project2, i+10, nil)
 		if err != nil {
 			t.Fatalf("Failed to create record: %v", err)
@@ -578,14 +579,7 @@ func TestListRecordsWithTags(t *testing.T) {
 				}
 				// 全てのフィルタタグがレコードに含まれているか確認
 				for _, filterTag := range tc.tags {
-					hasTag := false
-					for _, recordTag := range record.Tags {
-						if recordTag == filterTag {
-							hasTag = true
-							break
-						}
-					}
-					if !hasTag {
+					if !slices.Contains(record.Tags, filterTag) {
 						t.Errorf("Record %s does not have required tag '%s' from filter tags %v", record.ID, filterTag, tc.tags)
 					}
 				}
@@ -1143,13 +1137,8 @@ func TestGetProjectTags(t *testing.T) {
 	}
 
 	// タグが期待されるものと一致するかチェック
-	tagSet := make(map[string]bool)
-	for _, tag := range tags {
-		tagSet[tag] = true
-	}
-
 	for _, expectedTag := range expectedTags {
-		if !tagSet[expectedTag] {
+		if !slices.Contains(tags, expectedTag) {
 			t.Errorf("Expected tag '%s' not found in response", expectedTag)
 		}
 	}
@@ -1244,18 +1233,17 @@ func TestGetProjectTagsWithMultipleRecords(t *testing.T) {
 	}
 
 	// タグが期待されるものと一致するかチェック
-	tagSet := make(map[string]bool)
-	for _, tag := range tags {
-		tagSet[tag] = true
-	}
-
 	for _, expectedTag := range expectedTags {
-		if !tagSet[expectedTag] {
+		if !slices.Contains(tags, expectedTag) {
 			t.Errorf("Expected tag '%s' not found in response", expectedTag)
 		}
 	}
 
 	// 重複がないことを確認
+	tagSet := make(map[string]bool)
+	for _, tag := range tags {
+		tagSet[tag] = true
+	}
 	if len(tags) != len(tagSet) {
 		t.Error("Duplicate tags found in response")
 	}

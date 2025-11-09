@@ -10,6 +10,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -93,13 +94,8 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 		if len(params.Tags) > 0 {
 			tagMatch := false
 			for _, filterTag := range params.Tags {
-				for _, recordTag := range r.Tags {
-					if recordTag == filterTag {
-						tagMatch = true
-						break
-					}
-				}
-				if tagMatch {
+				if slices.Contains(r.Tags, filterTag) {
+					tagMatch = true
 					break
 				}
 			}
@@ -122,10 +118,7 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	if offset >= len(records) {
 		return []*model.Record{}, nil
 	}
-	endIndex := offset + limit
-	if endIndex > len(records) {
-		endIndex = len(records)
-	}
+	endIndex := min(offset+limit, len(records))
 
 	return records[offset:endIndex], nil
 }
@@ -271,10 +264,7 @@ func (m *MockProjectStore) ListProjects(ctx context.Context, params *store.ListP
 	if offset >= len(projects) {
 		return []*model.Project{}, nil
 	}
-	endIndex := offset + limit
-	if endIndex > len(projects) {
-		endIndex = len(projects)
-	}
+	endIndex := min(offset+limit, len(projects))
 
 	return projects[offset:endIndex], nil
 }
@@ -338,7 +328,7 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	projectName := "exercise"
 
 	// テストリクエストデータ
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		"value":     1,
 	}
@@ -403,7 +393,7 @@ func TestCreateRecordWithoutTimestamp(t *testing.T) {
 	projectName := "exercise"
 
 	// timestampを省略したテストリクエストデータ
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value": 1,
 		// timestampは意図的に省略
 	}
@@ -470,7 +460,7 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 	projectName := "exercise"
 
 	// valueを省略したテストリクエストデータ
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		// valueは意図的に省略
 	}
@@ -1054,7 +1044,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 		}
 
 		// 最初の3件のレコードが正しいか確認
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			if records[i].ID != allRecords[i].ID {
 				t.Errorf("Record at index %d has incorrect ID", i)
 			}
@@ -1084,7 +1074,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 		}
 
 		// オフセット3から4件のレコードが正しいか確認
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			if records[i].ID != allRecords[i+3].ID {
 				t.Errorf("Record at index %d has incorrect ID", i)
 			}
@@ -1415,14 +1405,14 @@ func TestBulkDeleteRecords(t *testing.T) {
 			mockStore := NewMockRecordStore()
 
 			// project1のレコードを作成（5件）
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
 				record, _ := model.NewRecord(recordTime, project1, i+1, nil)
 				mockStore.CreateRecord(context.Background(), record)
 			}
 
 			// project2のレコードを作成（3件）
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				recordTime := baseTime.AddDate(0, 0, i) // 1日ずつずらす
 				record, _ := model.NewRecord(recordTime, project2, i+10, nil)
 				mockStore.CreateRecord(context.Background(), record)
@@ -1451,7 +1441,7 @@ func TestBulkDeleteRecords(t *testing.T) {
 			}
 
 			// レスポンスのパース
-			var response map[string]interface{}
+			var response map[string]any
 			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
 			}
@@ -1513,7 +1503,7 @@ func TestCreateRecordWithTags(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストボディ
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		"value":     5,
 		"tags":      []string{"work", "important", "urgent"},
@@ -1566,7 +1556,7 @@ func TestCreateRecordWithEmptyTags(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストボディ（空のタグ配列）
-	requestBody := map[string]interface{}{
+	requestBody := map[string]any{
 		"timestamp": "2025-05-21T14:30:00Z",
 		"value":     3,
 		"tags":      []string{},
@@ -1741,7 +1731,7 @@ func TestCreateProjectEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// テストデータ
-	projectData := map[string]interface{}{
+	projectData := map[string]any{
 		"name":        "test-project",
 		"description": "Test project description",
 	}
@@ -1798,7 +1788,7 @@ func TestCreateDuplicateProjectEndpoint(t *testing.T) {
 	mockStore.MockProjectStore.CreateProject(context.Background(), project)
 
 	// 同じ名前のプロジェクトを作成しようとする
-	projectData := map[string]interface{}{
+	projectData := map[string]any{
 		"name":        "duplicate",
 		"description": "Second project",
 	}
@@ -1885,7 +1875,7 @@ func TestUpdateProjectEndpoint(t *testing.T) {
 	mockStore.MockProjectStore.CreateProject(context.Background(), project)
 
 	// 更新データ
-	updateData := map[string]interface{}{
+	updateData := map[string]any{
 		"description": "Updated description",
 	}
 
@@ -2113,7 +2103,7 @@ func TestListProjectsWithPagination(t *testing.T) {
 
 	// テスト用に5件のプロジェクトを作成
 	var allProjects []*model.Project
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		projectName := fmt.Sprintf("project-%d", i)
 		description := fmt.Sprintf("Project %d", i)
 		project, _ := model.NewProject(projectName, description)
