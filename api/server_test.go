@@ -1154,6 +1154,76 @@ func TestListRecordsWithPagination(t *testing.T) {
 	})
 }
 
+// TestListRecordsWithInvalidPaginationParams tests pagination with invalid parameters
+func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	projectName := "test-project"
+
+	// テスト用にレコードを1件作成
+	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+	record, _ := model.NewRecord(baseTime, projectName, 1, nil)
+	mockStore.CreateRecord(context.Background(), record)
+
+	// ケース1: 無効なlimit（非数値）
+	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=abc", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース2: 無効なlimit（負の数）
+	t.Run("Invalid limit (negative)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=-10", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース3: 無効なlimit（ゼロ）
+	t.Run("Invalid limit (zero)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=0", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース4: 存在しないcursor（不正なUUID形式ではないが、存在しないレコードID）
+	// モックストアでは存在しないcursorでも動作するので、エラーにならない
+	t.Run("Non-existent cursor", func(t *testing.T) {
+		// 実際のストアでは存在しないcursorはエラーになるが、
+		// モックでは単純に次のレコードがないと判定されるだけ
+		url := fmt.Sprintf("/api/v0/p/%s/r?cursor=non-existent-id", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		// モックストアでは200を返す（実際のストアでは動作が異なる可能性がある）
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		}
+	})
+}
+
 
 // TestDeleteProject はプロジェクト削除エンドポイントのテスト
 func TestDeleteProject(t *testing.T) {
@@ -2288,6 +2358,71 @@ func TestListProjectsWithPagination(t *testing.T) {
 		// 次ページは存在しない
 		if response.Next != nil {
 			t.Errorf("Expected no next page URL, got: %s", *response.Next)
+		}
+	})
+}
+
+// TestListProjectsWithInvalidPaginationParams tests project pagination with invalid parameters
+func TestListProjectsWithInvalidPaginationParams(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用にプロジェクトを1件作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+
+	// ケース1: 無効なlimit（非数値）
+	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {
+		url := "/api/v0/p?limit=invalid"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース2: 無効なlimit（負の数）
+	t.Run("Invalid limit (negative)", func(t *testing.T) {
+		url := "/api/v0/p?limit=-5"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース3: 無効なlimit（ゼロ）
+	t.Run("Invalid limit (zero)", func(t *testing.T) {
+		url := "/api/v0/p?limit=0"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース4: 存在しないcursor
+	// モックストアでは存在しないcursorでも動作する
+	t.Run("Non-existent cursor", func(t *testing.T) {
+		url := "/api/v0/p?cursor=non-existent-project"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		// モックストアでは200を返す
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
 		}
 	})
 }
