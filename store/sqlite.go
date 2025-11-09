@@ -314,7 +314,6 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	offset := int64(params.Pagination.Offset())
 
 	var records []*model.Record
-	var err error
 
 	if len(params.Tags) == 0 {
 		// タグフィルタなし
