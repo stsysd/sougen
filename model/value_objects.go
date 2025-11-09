@@ -268,6 +268,12 @@ func NewPagination(limitStr, offsetStr string) (*Pagination, error) {
 	return &Pagination{limit: limit, offset: offset}, nil
 }
 
+// NewPaginationWithValues creates a Pagination directly from integer values (for internal use).
+// No validation is performed on the values.
+func NewPaginationWithValues(limit, offset int) *Pagination {
+	return &Pagination{limit: limit, offset: offset}
+}
+
 // Limit returns the limit value.
 func (p *Pagination) Limit() int {
 	return p.limit
@@ -286,47 +292,4 @@ func parseInt(s string) (int, error) {
 		return 0, err
 	}
 	return value, nil
-}
-
-// SortOrder represents sorting order for records.
-type SortOrder struct {
-	value string // "asc" or "desc"
-}
-
-// NewSortOrder creates a new SortOrder value object.
-// Default is "desc" (newest first).
-func NewSortOrder(orderStr string) (*SortOrder, error) {
-	if orderStr != "" {
-		switch orderStr {
-		case "asc", "ASC":
-			return SortOrderAsc, nil
-		case "desc", "DESC":
-			return SortOrderDesc, nil
-		default:
-			return nil, fmt.Errorf("order must be 'asc' or 'desc'")
-		}
-	}
-
-  // Default to descending order
-	return SortOrderDesc, nil
-}
-
-var (
-  SortOrderAsc  = &SortOrder{value:"asc"}
-  SortOrderDesc = &SortOrder{value:"desc"}
-)
-
-// IsAsc returns true if the order is ascending (oldest first).
-func (s *SortOrder) IsAsc() bool {
-	return s.value == "asc"
-}
-
-// IsDesc returns true if the order is descending (newest first).
-func (s *SortOrder) IsDesc() bool {
-	return s.value == "desc"
-}
-
-// String returns the order as a string ("asc" or "desc").
-func (s *SortOrder) String() string {
-	return s.value
 }

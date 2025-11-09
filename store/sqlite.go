@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,23 @@ type ListProjectsParams struct {
 	Pagination *model.Pagination
 }
 
+// ListRecordsParams はレコード一覧取得のパラメータです。
+type ListRecordsParams struct {
+	Project    string
+	From       time.Time
+	To         time.Time
+	Pagination *model.Pagination
+	Tags       []string
+}
+
+// ListAllRecordsParams は全レコード取得のパラメータです（ページネーションなし）。
+type ListAllRecordsParams struct {
+	Project string
+	From    time.Time
+	To      time.Time
+	Tags    []string
+}
+
 // RecordStore はレコードの保存と取得を行うインターフェースです。
 type RecordStore interface {
 	// CreateRecord は新しいレコードを作成します。
@@ -36,10 +54,11 @@ type RecordStore interface {
 	DeleteProject(ctx context.Context, projectName string) error
 	// DeleteRecordsUntil は指定日時より前のレコードを削除します。
 	DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error)
-	// ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
-	ListRecords(ctx context.Context, project string, from, to time.Time, sortOrder *model.SortOrder) ([]*model.Record, error)
-	// ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
-	ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string, sortOrder *model.SortOrder) ([]*model.Record, error)
+	// ListRecords は指定されたパラメータに基づいてレコードを取得します。
+	ListRecords(ctx context.Context, params *ListRecordsParams) ([]*model.Record, error)
+	// ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します（ページネーションなし）。
+	// イテレータはレコードとエラーのペアを返します。エラーが発生した場合、エラーが返され処理が終了します。
+	ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error]
 	// Close はストアの接続を閉じます。
 	Close() error
 }
@@ -283,130 +302,139 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 }
 
 // ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
-func (s *SQLiteStore) ListRecords(ctx context.Context, project string, from, to time.Time, sortOrder *model.SortOrder) ([]*model.Record, error) {
+func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams) ([]*model.Record, error) {
 	// 日付の範囲を丸一日に設定（秒以下の精度を取り除く）
-	// fromは日付の始まりに設定
-	fromDate := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
+	fromDate := time.Date(params.From.Year(), params.From.Month(), params.From.Day(), 0, 0, 0, 0, params.From.Location())
 	fromStr := fromDate.Format(time.RFC3339)
 
-	// toは日付の終わりに設定（次の日の0時の直前）
-	toDate := time.Date(to.Year(), to.Month(), to.Day(), 23, 59, 59, 999999999, to.Location())
+	toDate := time.Date(params.To.Year(), params.To.Month(), params.To.Day(), 23, 59, 59, 999999999, params.To.Location())
 	toStr := toDate.Format(time.RFC3339)
 
-	// sqlcで生成されたクエリを使用
-	dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
-		Timestamp:   fromStr,
-		Timestamp_2: toStr,
-		Project:     project,
-	})
-	if err != nil {
-		return nil, err
-	}
+	limit := int64(params.Pagination.Limit())
+	offset := int64(params.Pagination.Offset())
 
-	// 結果の変換
 	var records []*model.Record
-	for _, dbRecord := range dbRecords {
-		// 文字列から時間に変換
-		timestamp, err := time.Parse(time.RFC3339, dbRecord.Timestamp)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse record date: %w", err)
-		}
+	var err error
 
-		// UUID の解析
-		id, err := uuid.Parse(dbRecord.ID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid UUID in database: %w", err)
-		}
-
-		// タグを GROUP_CONCAT の結果から分割
-		var tags []string
-		if tagsStr, ok := dbRecord.Tags.(string); ok && tagsStr != "" {
-			tags = strings.Split(tagsStr, " ")
-		}
-
-		// レコードの作成
-		record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), tags)
+	if len(params.Tags) == 0 {
+		// タグフィルタなし
+		dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
+			Timestamp:   fromStr,
+			Timestamp_2: toStr,
+			Project:     params.Project,
+			Limit:       limit,
+			Offset:      offset,
+		})
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, record)
-	}
 
-	// 降順の場合は結果を逆順にする
-	if sortOrder.IsDesc() {
-		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-			records[i], records[j] = records[j], records[i]
+		for _, dbRecord := range dbRecords {
+			timestamp, err := time.Parse(time.RFC3339, dbRecord.Timestamp)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse record date: %w", err)
+			}
+
+			id, err := uuid.Parse(dbRecord.ID)
+			if err != nil {
+				return nil, fmt.Errorf("invalid UUID in database: %w", err)
+			}
+
+			var tags []string
+			if tagsStr, ok := dbRecord.Tags.(string); ok && tagsStr != "" {
+				tags = strings.Split(tagsStr, " ")
+			}
+
+			record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), tags)
+			if err != nil {
+				return nil, err
+			}
+			records = append(records, record)
+		}
+	} else {
+		// タグフィルタあり
+		dbRecords, err := s.queries.ListRecordsWithTags(ctx, db.ListRecordsWithTagsParams{
+			Timestamp:   fromStr,
+			Timestamp_2: toStr,
+			Project:     params.Project,
+			Tags:        params.Tags,
+			Column5:     int64(len(params.Tags)),
+			Limit:       limit,
+			Offset:      offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, dbRecord := range dbRecords {
+			timestamp, err := time.Parse(time.RFC3339, dbRecord.Timestamp)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse record date: %w", err)
+			}
+
+			id, err := uuid.Parse(dbRecord.ID)
+			if err != nil {
+				return nil, fmt.Errorf("invalid UUID in database: %w", err)
+			}
+
+			var recordTags []string
+			if tagsStr, ok := dbRecord.AllTags.(string); ok && tagsStr != "" {
+				recordTags = strings.Split(tagsStr, " ")
+			}
+
+			record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), recordTags)
+			if err != nil {
+				return nil, err
+			}
+			records = append(records, record)
 		}
 	}
+
 
 	return records, nil
 }
 
-// ListRecordsWithTags は指定されたプロジェクトの、指定した期間内の、指定されたタグを持つレコードを取得します。
-func (s *SQLiteStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string, sortOrder *model.SortOrder) ([]*model.Record, error) {
-	// タグが指定されていない場合は通常のListRecordsを呼び出す
-	if len(tags) == 0 {
-		return s.ListRecords(ctx, project, from, to, sortOrder)
-	}
+// ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します。
+// ページネーションを使用して段階的にレコードを取得し、メモリ効率的に処理します。
+func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error] {
+	return func(yield func(*model.Record, error) bool) {
+		const pageSize = 1000
+		offset := 0
 
-	// 日付の範囲を丸一日に設定（秒以下の精度を取り除く）
-	// fromは日付の始まりに設定
-	fromDate := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
-	fromStr := fromDate.Format(time.RFC3339)
+		for {
+			pagination := model.NewPaginationWithValues(pageSize, offset)
 
-	// toは日付の終わりに設定（次の日の0時の直前）
-	toDate := time.Date(to.Year(), to.Month(), to.Day(), 23, 59, 59, 999999999, to.Location())
-	toStr := toDate.Format(time.RFC3339)
+			listParams := &ListRecordsParams{
+				Project:    params.Project,
+				From:       params.From,
+				To:         params.To,
+				Pagination: pagination,
+				Tags:       params.Tags,
+			}
 
-	// sqlcで生成されたクエリを使用
-	dbRecords, err := s.queries.ListRecordsWithTags(ctx, db.ListRecordsWithTagsParams{
-		Timestamp:   fromStr,
-		Timestamp_2: toStr,
-		Project:     project,
-		Tags:        tags,
-		Column5:     int64(len(tags)), // HAVINGクエリ用：タグの数
-	})
-	if err != nil {
-		return nil, err
-	}
+			records, err := s.ListRecords(ctx, listParams)
+			if err != nil {
+				// エラーが発生した場合、エラーをyieldして終了
+				yield(nil, err)
+				return
+			}
 
-	// 結果の変換
-	var records []*model.Record
-	for _, dbRecord := range dbRecords {
-		// 文字列から時間に変換
-		timestamp, err := time.Parse(time.RFC3339, dbRecord.Timestamp)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse record date: %w", err)
-		}
+			// 各レコードをyield
+			for _, record := range records {
+				if !yield(record, nil) {
+					// yieldがfalseを返したら早期終了
+					return
+				}
+			}
 
-		// UUID の解析
-		id, err := uuid.Parse(dbRecord.ID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid UUID in database: %w", err)
-		}
+			// 取得したレコード数がページサイズより少ない場合、これ以上レコードがない
+			if len(records) < pageSize {
+				break
+			}
 
-		// タグを GROUP_CONCAT の結果から分割
-		var recordTags []string
-		if tagsStr, ok := dbRecord.AllTags.(string); ok && tagsStr != "" {
-			recordTags = strings.Split(tagsStr, " ")
-		}
-
-		// レコードの作成
-		record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), recordTags)
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-
-	// 降順の場合は結果を逆順にする
-	if sortOrder.IsDesc() {
-		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-			records[i], records[j] = records[j], records[i]
+			offset += pageSize
 		}
 	}
-
-	return records, nil
 }
 
 // Close はデータベース接続を閉じます。

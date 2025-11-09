@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -80,38 +81,18 @@ func (m *MockRecordStore) DeleteRecord(ctx context.Context, id uuid.UUID) error 
 	return nil
 }
 
-func (m *MockRecordStore) ListRecords(ctx context.Context, project string, from, to time.Time, order *model.SortOrder) ([]*model.Record, error) {
+func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRecordsParams) ([]*model.Record, error) {
 	var records []*model.Record
 
 	for _, r := range m.records {
-		if r.Project == project && !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
-			records = append(records, r)
+		if r.Project != params.Project || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+			continue
 		}
-	}
 
-	// Timestampの昇順にソート（SQLiteの実装と同様に）
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].Timestamp.Before(records[j].Timestamp)
-	})
-
-	// 降順の場合は結果を逆順にする
-	if order.IsDesc() {
-		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-			records[i], records[j] = records[j], records[i]
-		}
-	}
-
-	return records, nil
-}
-
-func (m *MockRecordStore) ListRecordsWithTags(ctx context.Context, project string, from, to time.Time, tags []string, order *model.SortOrder) ([]*model.Record, error) {
-	var records []*model.Record
-
-	for _, r := range m.records {
-		if r.Project == project && !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
-			// タグフィルタチェック（OR条件）
+		// タグフィルタ
+		if len(params.Tags) > 0 {
 			tagMatch := false
-			for _, filterTag := range tags {
+			for _, filterTag := range params.Tags {
 				for _, recordTag := range r.Tags {
 					if recordTag == filterTag {
 						tagMatch = true
@@ -122,25 +103,76 @@ func (m *MockRecordStore) ListRecordsWithTags(ctx context.Context, project strin
 					break
 				}
 			}
-			if tagMatch {
-				records = append(records, r)
+			if !tagMatch {
+				continue
+			}
+		}
+
+		records = append(records, r)
+	}
+
+	// Timestampの降順にソート（SQLiteの実装と同様に）
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Timestamp.After(records[j].Timestamp)
+	})
+
+	// ページネーションを適用
+	offset := params.Pagination.Offset()
+	limit := params.Pagination.Limit()
+	if offset >= len(records) {
+		return []*model.Record{}, nil
+	}
+	endIndex := offset + limit
+	if endIndex > len(records) {
+		endIndex = len(records)
+	}
+
+	return records[offset:endIndex], nil
+}
+
+func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.ListAllRecordsParams) iter.Seq2[*model.Record, error] {
+	return func(yield func(*model.Record, error) bool) {
+		var records []*model.Record
+
+		for _, r := range m.records {
+			if r.Project != params.Project || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+				continue
+			}
+
+			// タグフィルタ
+			if len(params.Tags) > 0 {
+				tagMatch := false
+				for _, filterTag := range params.Tags {
+					for _, recordTag := range r.Tags {
+						if recordTag == filterTag {
+							tagMatch = true
+							break
+						}
+					}
+					if tagMatch {
+						break
+					}
+				}
+				if !tagMatch {
+					continue
+				}
+			}
+
+			records = append(records, r)
+		}
+
+		// Timestampの降順にソート（SQLiteの実装と同様に）
+		sort.Slice(records, func(i, j int) bool {
+			return records[i].Timestamp.After(records[j].Timestamp)
+		})
+
+		// すべてのレコードをyield
+		for _, record := range records {
+			if !yield(record, nil) {
+				return
 			}
 		}
 	}
-
-	// Timestampの昇順にソート（SQLiteの実装と同様に）
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].Timestamp.Before(records[j].Timestamp)
-	})
-
-	// 降順の場合は結果を逆順にする
-	if order.IsDesc() {
-		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-			records[i], records[j] = records[j], records[i]
-		}
-	}
-
-	return records, nil
 }
 
 func (m *MockRecordStore) Close() error {
@@ -1083,170 +1115,6 @@ func TestListRecordsWithPagination(t *testing.T) {
 	})
 }
 
-// TestListRecordsWithSortOrder はソート順序のテスト
-func TestListRecordsWithSortOrder(t *testing.T) {
-	// モックストアの準備
-	mockStore := NewMockRecordStore()
-
-	// プロジェクト名
-	projectName := "sort-order-test"
-
-	// テスト用に5件のレコードを作成（古い順に作成）
-	var expectedAscOrder []*model.Record
-	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-
-	for i := 0; i < 5; i++ {
-		recordTime := baseTime.Add(time.Duration(i) * time.Hour)
-		record, _ := model.NewRecord(recordTime, projectName, i+1, nil)
-		mockStore.CreateRecord(context.Background(), record)
-		expectedAscOrder = append(expectedAscOrder, record)
-	}
-
-	// 降順の期待値（昇順の逆）
-	expectedDescOrder := make([]*model.Record, 5)
-	for i := 0; i < 5; i++ {
-		expectedDescOrder[i] = expectedAscOrder[4-i]
-	}
-
-	server := NewServer(mockStore, newTestConfig())
-
-	// ケース1: order未指定（デフォルトは降順=newest first）
-	t.Run("Default Order (Descending)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r", projectName)
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-			return
-		}
-
-		var records []*model.Record
-		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
-			t.Fatalf("Failed to decode response body: %v", err)
-		}
-
-		if len(records) != 5 {
-			t.Errorf("Expected 5 records, got %d", len(records))
-			return
-		}
-
-		// 降順（newest first）になっているか確認
-		for i := 0; i < 5; i++ {
-			if records[i].ID != expectedDescOrder[i].ID {
-				t.Errorf("Record at index %d has incorrect ID (expected newest first)", i)
-			}
-		}
-	})
-
-	// ケース2: order=desc で明示的に降順指定
-	t.Run("Explicit Descending Order", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?order=desc", projectName)
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-			return
-		}
-
-		var records []*model.Record
-		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
-			t.Fatalf("Failed to decode response body: %v", err)
-		}
-
-		if len(records) != 5 {
-			t.Errorf("Expected 5 records, got %d", len(records))
-			return
-		}
-
-		// 降順（newest first）になっているか確認
-		for i := 0; i < 5; i++ {
-			if records[i].ID != expectedDescOrder[i].ID {
-				t.Errorf("Record at index %d has incorrect ID (expected newest first)", i)
-			}
-		}
-	})
-
-	// ケース3: order=asc で昇順指定（oldest first）
-	t.Run("Ascending Order (Oldest First)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?order=asc", projectName)
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-			return
-		}
-
-		var records []*model.Record
-		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
-			t.Fatalf("Failed to decode response body: %v", err)
-		}
-
-		if len(records) != 5 {
-			t.Errorf("Expected 5 records, got %d", len(records))
-			return
-		}
-
-		// 昇順（oldest first）になっているか確認
-		for i := 0; i < 5; i++ {
-			if records[i].ID != expectedAscOrder[i].ID {
-				t.Errorf("Record at index %d has incorrect ID (expected oldest first)", i)
-			}
-		}
-	})
-
-	// ケース4: 大文字のASCも受け付ける
-	t.Run("Uppercase ASC", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?order=ASC", projectName)
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-			return
-		}
-
-		var records []*model.Record
-		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
-			t.Fatalf("Failed to decode response body: %v", err)
-		}
-
-		if len(records) != 5 {
-			t.Errorf("Expected 5 records, got %d", len(records))
-			return
-		}
-
-		// 昇順になっているか確認
-		for i := 0; i < 5; i++ {
-			if records[i].ID != expectedAscOrder[i].ID {
-				t.Errorf("Record at index %d has incorrect ID", i)
-			}
-		}
-	})
-
-	// ケース5: 不正なorder値でエラー
-	t.Run("Invalid Order Value", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?order=invalid", projectName)
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
-		}
-	})
-}
 
 // TestDeleteProject はプロジェクト削除エンドポイントのテスト
 func TestDeleteProject(t *testing.T) {
@@ -1289,11 +1157,14 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクトのレコードが削除されたことを確認
-	sortOrder, _ := model.NewSortOrder("desc")
-	testRecords, err := mockStore.ListRecords(context.Background(), "test",
-		time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
-		time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
-		sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	testRecords, err := mockStore.ListRecords(context.Background(), &store.ListRecordsParams{
+		Project:    "test",
+		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if err != nil {
 		t.Fatalf("Failed to list test project records: %v", err)
 	}
@@ -2107,11 +1978,14 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 	}
 
 	// レコードが削除されたことを確認
-	sortOrder, _ := model.NewSortOrder("desc")
-	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), "delete-test",
-		time.Now().Add(-24*time.Hour),
-		time.Now().Add(24*time.Hour),
-		sortOrder)
+	pagination, _ := model.NewPagination("100", "0")
+	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), &store.ListRecordsParams{
+		Project:    "delete-test",
+		From:       time.Now().Add(-24 * time.Hour),
+		To:         time.Now().Add(24 * time.Hour),
+		Pagination: pagination,
+		Tags:       []string{},
+	})
 	if len(records) != 0 {
 		t.Errorf("Expected 0 records after project deletion, got %d", len(records))
 	}

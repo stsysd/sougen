@@ -32,7 +32,8 @@ FROM records r
 LEFT JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
 GROUP BY r.id, r.project, r.value, r.timestamp
-ORDER BY r.timestamp;
+ORDER BY r.timestamp DESC
+LIMIT ? OFFSET ?;
 
 -- name: ListRecordsWithTags :many
 -- Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
@@ -50,7 +51,8 @@ WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
   AND t.tag IN (sqlc.slice(tags))
 GROUP BY r.id, r.project, r.value, r.timestamp
 HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
-ORDER BY r.timestamp;
+ORDER BY r.timestamp DESC
+LIMIT ? OFFSET ?;
 
 
 -- name: DeleteProject :exec
