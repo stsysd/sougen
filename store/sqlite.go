@@ -57,7 +57,8 @@ type RecordStore interface {
 	// ListRecords は指定されたパラメータに基づいてレコードを取得します。
 	ListRecords(ctx context.Context, params *ListRecordsParams) ([]*model.Record, error)
 	// ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します（ページネーションなし）。
-	ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq[*model.Record]
+	// イテレータはレコードとエラーのペアを返します。エラーが発生した場合、エラーが返され処理が終了します。
+	ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error]
 	// Close はストアの接続を閉じます。
 	Close() error
 }
@@ -398,8 +399,8 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 
 // ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します。
 // ページネーションを使用して段階的にレコードを取得し、メモリ効率的に処理します。
-func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq[*model.Record] {
-	return func(yield func(*model.Record) bool) {
+func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error] {
+	return func(yield func(*model.Record, error) bool) {
 		const pageSize = 1000
 		offset := 0
 
@@ -416,13 +417,14 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 
 			records, err := s.ListRecords(ctx, listParams)
 			if err != nil {
-				// エラーの場合は終了
+				// エラーが発生した場合、エラーをyieldして終了
+				yield(nil, err)
 				return
 			}
 
 			// 各レコードをyield
 			for _, record := range records {
-				if !yield(record) {
+				if !yield(record, nil) {
 					// yieldがfalseを返したら早期終了
 					return
 				}

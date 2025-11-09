@@ -484,7 +484,12 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// イテレータで各レコードを順次処理
-	for record := range s.store.ListAllRecords(r.Context(), storeParams) {
+	for record, err := range s.store.ListAllRecords(r.Context(), storeParams) {
+		if err != nil {
+			log.Printf("Error retrieving records: %v", err)
+			http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
+			return
+		}
 		dateString := record.Timestamp.Local().Format("2006-01-02")
 		dateMap[dateString] += record.Value
 	}

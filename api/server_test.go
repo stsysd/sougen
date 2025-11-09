@@ -130,8 +130,8 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	return records[offset:endIndex], nil
 }
 
-func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.ListAllRecordsParams) iter.Seq[*model.Record] {
-	return func(yield func(*model.Record) bool) {
+func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.ListAllRecordsParams) iter.Seq2[*model.Record, error] {
+	return func(yield func(*model.Record, error) bool) {
 		var records []*model.Record
 
 		for _, r := range m.records {
@@ -168,7 +168,7 @@ func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.List
 
 		// すべてのレコードをyield
 		for _, record := range records {
-			if !yield(record) {
+			if !yield(record, nil) {
 				return
 			}
 		}
