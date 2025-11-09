@@ -233,10 +233,10 @@ type Pagination struct {
 	offset int
 }
 
-// CursorPagination represents cursor-based pagination parameters for records.
+// CursorPagination represents cursor-based pagination parameters for records and projects.
 type CursorPagination struct {
 	limit  int
-	cursor *uuid.UUID // Cursor for pagination (nil means start from the beginning)
+	cursor *string // Cursor for pagination (nil means start from the beginning)
 }
 
 // NewCursorPagination creates a new cursor-based pagination value object.
@@ -259,13 +259,9 @@ func NewCursorPagination(limitStr, cursorStr string) (*CursorPagination, error) 
 	}
 
 	// Process cursor parameter
-	var cursor *uuid.UUID
+	var cursor *string
 	if cursorStr != "" {
-		parsedCursor, err := uuid.Parse(cursorStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid cursor parameter: must be a valid UUID")
-		}
-		cursor = &parsedCursor
+		cursor = &cursorStr
 	}
 
 	return &CursorPagination{limit: limit, cursor: cursor}, nil
@@ -273,7 +269,7 @@ func NewCursorPagination(limitStr, cursorStr string) (*CursorPagination, error) 
 
 // NewCursorPaginationWithValues creates a CursorPagination directly from values (for internal use).
 // No validation is performed on the values.
-func NewCursorPaginationWithValues(limit int, cursor *uuid.UUID) *CursorPagination {
+func NewCursorPaginationWithValues(limit int, cursor *string) *CursorPagination {
 	return &CursorPagination{limit: limit, cursor: cursor}
 }
 
@@ -282,9 +278,9 @@ func (p *CursorPagination) Limit() int {
 	return p.limit
 }
 
-// Cursor returns the cursor UUID for cursor-based pagination.
+// Cursor returns the cursor string for cursor-based pagination.
 // Returns nil if no cursor is set (i.e., start from the beginning).
-func (p *CursorPagination) Cursor() *uuid.UUID {
+func (p *CursorPagination) Cursor() *string {
 	return p.cursor
 }
 

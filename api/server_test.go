@@ -119,7 +119,7 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	startIndex := 0
 	if cursor := params.Pagination.Cursor(); cursor != nil {
 		for i, r := range records {
-			if r.ID == *cursor {
+			if r.ID.String() == *cursor {
 				startIndex = i + 1 // カーソルの次から開始
 				break
 			}
@@ -264,20 +264,34 @@ func (m *MockProjectStore) ListProjects(ctx context.Context, params *store.ListP
 		projects = append(projects, project)
 	}
 
-	// updated_atの降順にソート（SQLiteの実装と同様に）
+	// updated_atの降順、nameの昇順にソート（SQLiteの実装と同様に）
 	sort.Slice(projects, func(i, j int) bool {
+		if projects[i].UpdatedAt.Equal(projects[j].UpdatedAt) {
+			return projects[i].Name < projects[j].Name
+		}
 		return projects[i].UpdatedAt.After(projects[j].UpdatedAt)
 	})
 
-	// ページネーションを適用
-	offset := params.Offset
-	limit := params.Limit
-	if offset >= len(projects) {
+	// カーソルベースのページネーションを適用
+	startIndex := 0
+	if cursor := params.Pagination.Cursor(); cursor != nil {
+		// カーソルが指定されている場合、そのプロジェクトの次から開始
+		for i, p := range projects {
+			if p.Name == *cursor {
+				startIndex = i + 1
+				break
+			}
+		}
+	}
+
+	// startIndexから指定された件数を取得
+	limit := params.Pagination.Limit()
+	if startIndex >= len(projects) {
 		return []*model.Project{}, nil
 	}
-	endIndex := min(offset+limit, len(projects))
+	endIndex := min(startIndex+limit, len(projects))
 
-	return projects[offset:endIndex], nil
+	return projects[startIndex:endIndex], nil
 }
 
 func (m *MockProjectStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
@@ -1966,15 +1980,15 @@ func TestListProjectsEndpoint(t *testing.T) {
 	}
 
 	// レスポンスボディをパース
-	var projects []*model.Project
-	err := json.Unmarshal(w.Body.Bytes(), &projects)
+	var response ListProjectsResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
 	// プロジェクト数をチェック
-	if len(projects) != 2 {
-		t.Errorf("Expected 2 projects, got %d", len(projects))
+	if len(response.Result) != 2 {
+		t.Errorf("Expected 2 projects, got %d", len(response.Result))
 	}
 }
 
@@ -2147,9 +2161,9 @@ func TestListProjectsWithPagination(t *testing.T) {
 		allProjects = append(allProjects, project)
 	}
 
-	// ケース1: limit=2, offset=0 で最初の2件を取得
+	// ケース1: limit=2 で最初の2件を取得（cursor指定なし）
 	t.Run("First Page", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=0"
+		url := "/api/v0/p?limit=2"
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -2160,20 +2174,41 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(projects) != 2 {
-			t.Errorf("Expected 2 projects, got %d", len(projects))
+		if len(response.Result) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(response.Result))
+		}
+
+		// 次ページが存在することを確認
+		if response.Next == nil {
+			t.Error("Expected next page URL, got nil")
+		} else if !strings.Contains(*response.Next, "cursor=") {
+			t.Errorf("Expected next URL to contain cursor parameter, got: %s", *response.Next)
 		}
 	})
 
-	// ケース2: limit=2, offset=2 で次の2件を取得
-	t.Run("Second Page", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=2"
-		req := httptest.NewRequest(http.MethodGet, url, nil)
+	// ケース2: cursorを使って次の2件を取得
+	t.Run("Second Page with Cursor", func(t *testing.T) {
+		// 最初のページを取得してcursorを取得
+		firstPageURL := "/api/v0/p?limit=2"
+		firstReq := httptest.NewRequest(http.MethodGet, firstPageURL, nil)
+		firstReq.Header.Set("X-API-Key", testAPIKey)
+		firstW := httptest.NewRecorder()
+		server.ServeHTTP(firstW, firstReq)
+
+		var firstResponse ListProjectsResponse
+		json.NewDecoder(firstW.Body).Decode(&firstResponse)
+
+		if firstResponse.Next == nil {
+			t.Fatal("Expected next page URL in first response")
+		}
+
+		// 次ページを取得
+		req := httptest.NewRequest(http.MethodGet, *firstResponse.Next, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
@@ -2183,19 +2218,24 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(projects) != 2 {
-			t.Errorf("Expected 2 projects, got %d", len(projects))
+		if len(response.Result) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(response.Result))
+		}
+
+		// 次ページが存在することを確認
+		if response.Next == nil {
+			t.Error("Expected next page URL, got nil")
 		}
 	})
 
-	// ケース3: limit=2, offset=4 で最後の1件を取得
+	// ケース3: 最後のページ（残り1件）
 	t.Run("Last Page", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=4"
+		url := "/api/v0/p?limit=10"
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -2206,40 +2246,23 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(projects) != 1 {
-			t.Errorf("Expected 1 project, got %d", len(projects))
+		// 全5件が返される
+		if len(response.Result) != 5 {
+			t.Errorf("Expected 5 projects, got %d", len(response.Result))
+		}
+
+		// 次ページは存在しない
+		if response.Next != nil {
+			t.Errorf("Expected no next page URL, got: %s", *response.Next)
 		}
 	})
 
-	// ケース4: offset が範囲外の場合、空配列が返される
-	t.Run("Out of Range Offset", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=10"
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-			return
-		}
-
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
-			t.Fatalf("Failed to decode response body: %v", err)
-		}
-
-		if len(projects) != 0 {
-			t.Errorf("Expected 0 projects, got %d", len(projects))
-		}
-	})
-
-	// ケース5: パラメータなしでデフォルトのlimitが適用される
+	// ケース4: パラメータなしでデフォルトのlimitが適用される
 	t.Run("Default Pagination", func(t *testing.T) {
 		url := "/api/v0/p"
 		req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -2252,14 +2275,19 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
 		// デフォルトのlimitは100なので、5件すべて返される
-		if len(projects) != 5 {
-			t.Errorf("Expected 5 projects, got %d", len(projects))
+		if len(response.Result) != 5 {
+			t.Errorf("Expected 5 projects, got %d", len(response.Result))
+		}
+
+		// 次ページは存在しない
+		if response.Next != nil {
+			t.Errorf("Expected no next page URL, got: %s", *response.Next)
 		}
 	})
 }

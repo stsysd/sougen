@@ -23,15 +23,16 @@ type Querier interface {
 	GetProjectTags(ctx context.Context, project string) ([]string, error)
 	GetRecord(ctx context.Context, id string) (Record, error)
 	GetRecordTags(ctx context.Context, recordID string) ([]string, error)
+	// Cursor-based pagination: uses cursor_updated_at and cursor_name for pagination
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 	// Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
-	// Cursor-based pagination: uses anchor_timestamp and anchor_id for pagination
+	// Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 	ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 	// Returns records that have all of the specified tags
 	// Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
-	// Cursor-based pagination: uses anchor_timestamp and anchor_id for pagination
+	// Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 	ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]ListRecordsWithTagsRow, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (sql.Result, error)
 	UpdateRecord(ctx context.Context, arg UpdateRecordParams) (sql.Result, error)

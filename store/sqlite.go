@@ -20,8 +20,7 @@ import (
 
 // ListProjectsParams はプロジェクト一覧取得のパラメータです。
 type ListProjectsParams struct {
-	Limit  int
-	Offset int
+	Pagination *model.CursorPagination
 }
 
 // ListRecordsParams はレコード一覧取得のパラメータです。
@@ -319,7 +318,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	var cursorColumn interface{}
 	if cursor := params.Pagination.Cursor(); cursor != nil {
 		// カーソルが指定されている場合、そのレコードの情報を取得
-		cursorIDStr := cursor.String()
+		cursorIDStr := *cursor
 		cursorRecord, err := s.queries.GetRecord(ctx, cursorIDStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get cursor record: %w", err)
@@ -425,7 +424,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error] {
 	return func(yield func(*model.Record, error) bool) {
 		const pageSize = 1000
-		var cursor *uuid.UUID
+		var cursor *string
 
 		for {
 			pagination := model.NewCursorPaginationWithValues(pageSize, cursor)
@@ -459,8 +458,8 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 			}
 
 			// 次のページのためのカーソルを設定
-			lastRecordID := records[len(records)-1].ID
-			cursor = &lastRecordID
+			lastRecordIDStr := records[len(records)-1].ID.String()
+			cursor = &lastRecordIDStr
 		}
 	}
 }
@@ -680,13 +679,36 @@ func (s *SQLiteStore) DeleteProjectEntity(ctx context.Context, name string) erro
 
 // ListProjects はすべてのプロジェクトを取得します。
 func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsParams) ([]*model.Project, error) {
-	limit := int64(params.Limit)
-	offset := int64(params.Offset)
+	limit := int64(params.Pagination.Limit())
+
+	// カーソルベースのページネーションパラメータ
+	var cursorName string
+	var cursorUpdatedAt string
+	var cursorColumn interface{}
+	if cursor := params.Pagination.Cursor(); cursor != nil {
+		// カーソルが指定されている場合、そのプロジェクトの情報を取得
+		cursorProjectName := *cursor
+		cursorProject, err := s.queries.GetProject(ctx, cursorProjectName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get cursor project: %w", err)
+		}
+		cursorName = cursorProjectName
+		cursorUpdatedAt = cursorProject.UpdatedAt
+		cursorColumn = nil // NULL ではなく、有効な値として扱う
+	} else {
+		// カーソルが指定されていない場合は NULL
+		cursorColumn = nil
+		cursorUpdatedAt = ""
+		cursorName = ""
+	}
 
 	// sqlcで生成されたクエリを使用
 	dbProjects, err := s.queries.ListProjects(ctx, db.ListProjectsParams{
-		Limit:  limit,
-		Offset: offset,
+		Column1:     cursorColumn,
+		UpdatedAt:   cursorUpdatedAt,
+		UpdatedAt_2: cursorUpdatedAt,
+		Name:        cursorName,
+		Limit:       limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list projects: %w", err)

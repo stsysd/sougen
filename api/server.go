@@ -704,14 +704,14 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 // ListProjectsParams はプロジェクト一覧取得のパラメータです。
 type ListProjectsParams struct {
-	Pagination *model.Pagination
+	Pagination *model.CursorPagination
 }
 
 // NewListProjectsParams はリクエストからプロジェクト一覧取得のパラメータを作成します。
 func NewListProjectsParams(r *http.Request) (*ListProjectsParams, error) {
 	query := r.URL.Query()
 
-	pagination, err := model.NewPagination(query.Get("limit"), query.Get("offset"))
+	pagination, err := model.NewCursorPagination(query.Get("limit"), query.Get("cursor"))
 	if err != nil {
 		return nil, err
 	}
@@ -719,6 +719,12 @@ func NewListProjectsParams(r *http.Request) (*ListProjectsParams, error) {
 	return &ListProjectsParams{
 		Pagination: pagination,
 	}, nil
+}
+
+// ListProjectsResponse はプロジェクト一覧取得のレスポンスです。
+type ListProjectsResponse struct {
+	Result []*model.Project `json:"result"`
+	Next   *string          `json:"next,omitempty"`
 }
 
 // handleListProjects はプロジェクト一覧取得をハンドリングします。
@@ -736,10 +742,10 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// store.ListProjectsParams を作成
+	// プロジェクトの取得（limit+1 件取得して次ページの有無を判定）
+	originalLimit := params.Pagination.Limit()
 	storeParams := &store.ListProjectsParams{
-		Limit:  params.Pagination.Limit(),
-		Offset: params.Pagination.Offset(),
+		Pagination: model.NewCursorPaginationWithValues(originalLimit+1, params.Pagination.Cursor()),
 	}
 
 	projects, err := projectStore.ListProjects(r.Context(), storeParams)
@@ -748,14 +754,26 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// レスポンスの設定
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	// レスポンスの構築
+	response := &ListProjectsResponse{
+		Result: projects,
+	}
 
-	// JSONとしてレスポンスを返す
-	if err := json.NewEncoder(w).Encode(projects); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
-		return
+	// 次ページの URL を生成
+	if len(projects) > originalLimit {
+		// limit+1 件取得できた場合、次ページが存在する
+		response.Result = projects[:originalLimit]
+		lastProject := projects[originalLimit-1]
+
+		// 次ページの URL パスを生成
+		nextPath := buildNextPagePath(r, lastProject.Name)
+		response.Next = &nextPath
+	}
+
+	// レスポンスの返却
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
 	}
 }
 

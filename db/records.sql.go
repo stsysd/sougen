@@ -225,17 +225,28 @@ func (q *Queries) GetRecordTags(ctx context.Context, recordID string) ([]string,
 const listProjects = `-- name: ListProjects :many
 SELECT name, description, created_at, updated_at
 FROM projects
-ORDER BY updated_at DESC
-LIMIT ? OFFSET ?
+WHERE ? IS NULL OR updated_at < ? OR (updated_at = ? AND name > ?)
+ORDER BY updated_at DESC, name
+LIMIT ?
 `
 
 type ListProjectsParams struct {
-	Limit  int64 `db:"limit" json:"limit"`
-	Offset int64 `db:"offset" json:"offset"`
+	Column1     interface{} `db:"column_1" json:"column_1"`
+	UpdatedAt   string      `db:"updated_at" json:"updated_at"`
+	UpdatedAt_2 string      `db:"updated_at_2" json:"updated_at_2"`
+	Name        string      `db:"name" json:"name"`
+	Limit       int64       `db:"limit" json:"limit"`
 }
 
+// Cursor-based pagination: uses cursor_updated_at and cursor_name for pagination
 func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error) {
-	rows, err := q.db.QueryContext(ctx, listProjects, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, listProjects,
+		arg.Column1,
+		arg.UpdatedAt,
+		arg.UpdatedAt_2,
+		arg.Name,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +310,7 @@ type ListRecordsRow struct {
 
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 // Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
-// Cursor-based pagination: uses anchor_timestamp and anchor_id for pagination
+// Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRecords,
 		arg.Timestamp,
@@ -380,7 +391,7 @@ type ListRecordsWithTagsRow struct {
 // Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 // Returns records that have all of the specified tags
 // Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
-// Cursor-based pagination: uses anchor_timestamp and anchor_id for pagination
+// Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTagsParams) ([]ListRecordsWithTagsRow, error) {
 	query := listRecordsWithTags
 	var queryParams []interface{}

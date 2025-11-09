@@ -92,10 +92,12 @@ WHERE name = ?;
 DELETE FROM projects WHERE name = ?;
 
 -- name: ListProjects :many
+-- Cursor-based pagination: uses cursor_updated_at and cursor_name for pagination
 SELECT name, description, created_at, updated_at
 FROM projects
-ORDER BY updated_at DESC
-LIMIT ? OFFSET ?;
+WHERE ? IS NULL OR updated_at < ? OR (updated_at = ? AND name > ?)
+ORDER BY updated_at DESC, name
+LIMIT ?;
 
 -- name: GetProjectTags :many
 SELECT DISTINCT tag
