@@ -118,10 +118,7 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	if offset >= len(records) {
 		return []*model.Record{}, nil
 	}
-	endIndex := offset + limit
-	if endIndex > len(records) {
-		endIndex = len(records)
-	}
+	endIndex := min(offset+limit, len(records))
 
 	return records[offset:endIndex], nil
 }
@@ -267,10 +264,7 @@ func (m *MockProjectStore) ListProjects(ctx context.Context, params *store.ListP
 	if offset >= len(projects) {
 		return []*model.Project{}, nil
 	}
-	endIndex := offset + limit
-	if endIndex > len(projects) {
-		endIndex = len(projects)
-	}
+	endIndex := min(offset+limit, len(projects))
 
 	return projects[offset:endIndex], nil
 }
