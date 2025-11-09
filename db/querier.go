@@ -23,7 +23,7 @@ type Querier interface {
 	GetProjectTags(ctx context.Context, project string) ([]string, error)
 	GetRecord(ctx context.Context, id string) (Record, error)
 	GetRecordTags(ctx context.Context, recordID string) ([]string, error)
-	ListProjects(ctx context.Context) ([]Project, error)
+	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 	// Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
 	ListRecords(ctx context.Context, arg ListRecordsParams) ([]ListRecordsRow, error)

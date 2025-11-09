@@ -17,6 +17,11 @@ import (
 	"github.com/stsysd/sougen/model"
 )
 
+// ListProjectsParams はプロジェクト一覧取得のパラメータです。
+type ListProjectsParams struct {
+	Pagination *model.Pagination
+}
+
 // RecordStore はレコードの保存と取得を行うインターフェースです。
 type RecordStore interface {
 	// CreateRecord は新しいレコードを作成します。
@@ -49,8 +54,8 @@ type ProjectStore interface {
 	UpdateProject(ctx context.Context, project *model.Project) error
 	// DeleteProjectEntity はプロジェクトエンティティのみを削除します（レコードは削除しません）。
 	DeleteProjectEntity(ctx context.Context, name string) error
-	// ListProjects はすべてのプロジェクトを取得します。
-	ListProjects(ctx context.Context) ([]*model.Project, error)
+	// ListProjects は指定されたパラメータに基づいてプロジェクトを取得します。
+	ListProjects(ctx context.Context, params *ListProjectsParams) ([]*model.Project, error)
 	// GetProjectTags は指定されたプロジェクトのタグ一覧を取得します。
 	GetProjectTags(ctx context.Context, projectName string) ([]string, error)
 }
@@ -618,9 +623,15 @@ func (s *SQLiteStore) DeleteProjectEntity(ctx context.Context, name string) erro
 }
 
 // ListProjects はすべてのプロジェクトを取得します。
-func (s *SQLiteStore) ListProjects(ctx context.Context) ([]*model.Project, error) {
+func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsParams) ([]*model.Project, error) {
+	limit := int64(params.Pagination.Limit())
+	offset := int64(params.Pagination.Offset())
+
 	// sqlcで生成されたクエリを使用
-	dbProjects, err := s.queries.ListProjects(ctx)
+	dbProjects, err := s.queries.ListProjects(ctx, db.ListProjectsParams{
+		Limit:  limit,
+		Offset: offset,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list projects: %w", err)
 	}

@@ -88,7 +88,8 @@ DELETE FROM projects WHERE name = ?;
 -- name: ListProjects :many
 SELECT name, description, created_at, updated_at
 FROM projects
-ORDER BY updated_at DESC;
+ORDER BY updated_at DESC
+LIMIT ? OFFSET ?;
 
 -- name: GetProjectTags :many
 SELECT DISTINCT tag
