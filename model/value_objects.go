@@ -268,6 +268,12 @@ func NewPagination(limitStr, offsetStr string) (*Pagination, error) {
 	return &Pagination{limit: limit, offset: offset}, nil
 }
 
+// NewPaginationWithValues creates a Pagination directly from integer values (for internal use).
+// No validation is performed on the values.
+func NewPaginationWithValues(limit, offset int) *Pagination {
+	return &Pagination{limit: limit, offset: offset}
+}
+
 // Limit returns the limit value.
 func (p *Pagination) Limit() int {
 	return p.limit

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,14 @@ type ListRecordsParams struct {
 	Tags       []string
 }
 
+// ListAllRecordsParams は全レコード取得のパラメータです（ページネーションなし）。
+type ListAllRecordsParams struct {
+	Project string
+	From    time.Time
+	To      time.Time
+	Tags    []string
+}
+
 // RecordStore はレコードの保存と取得を行うインターフェースです。
 type RecordStore interface {
 	// CreateRecord は新しいレコードを作成します。
@@ -47,6 +56,8 @@ type RecordStore interface {
 	DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error)
 	// ListRecords は指定されたパラメータに基づいてレコードを取得します。
 	ListRecords(ctx context.Context, params *ListRecordsParams) ([]*model.Record, error)
+	// ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します（ページネーションなし）。
+	ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq[*model.Record]
 	// Close はストアの接続を閉じます。
 	Close() error
 }
@@ -383,6 +394,48 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	}
 
 	return records, nil
+}
+
+// ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します。
+// ページネーションを使用して段階的にレコードを取得し、メモリ効率的に処理します。
+func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq[*model.Record] {
+	return func(yield func(*model.Record) bool) {
+		const pageSize = 1000
+		offset := 0
+
+		for {
+			pagination := model.NewPaginationWithValues(pageSize, offset)
+
+			listParams := &ListRecordsParams{
+				Project:    params.Project,
+				From:       params.From,
+				To:         params.To,
+				Pagination: pagination,
+				Tags:       params.Tags,
+			}
+
+			records, err := s.ListRecords(ctx, listParams)
+			if err != nil {
+				// エラーの場合は終了
+				return
+			}
+
+			// 各レコードをyield
+			for _, record := range records {
+				if !yield(record) {
+					// yieldがfalseを返したら早期終了
+					return
+				}
+			}
+
+			// 取得したレコード数がページサイズより少ない場合、これ以上レコードがない
+			if len(records) < pageSize {
+				break
+			}
+
+			offset += pageSize
+		}
+	}
 }
 
 // Close はデータベース接続を閉じます。

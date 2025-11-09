@@ -472,27 +472,19 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// レコードの取得（ヒートマップ生成のためすべてのレコードが必要）
-	pagination, _ := model.NewPagination("1000000", "0")
-
-	storeParams := &store.ListRecordsParams{
-		Project:    params.ProjectName.String(),
-		From:       params.DateRange.From(),
-		To:         params.DateRange.To(),
-		Pagination: pagination,
-		Tags:       params.Tags.Values(),
-	}
-
-	records, err := s.store.ListRecords(r.Context(), storeParams)
-	if err != nil {
-		log.Printf("Error retrieving records: %v", err)
-		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
-		return
-	}
-
-	// 日付ごとに集計
+	// レコードの取得と日付ごとの集計
+	// イテレータを使用してメモリ効率的に全レコードを処理
 	dateMap := make(map[string]int)
-	for _, record := range records {
+
+	storeParams := &store.ListAllRecordsParams{
+		Project: params.ProjectName.String(),
+		From:    params.DateRange.From(),
+		To:      params.DateRange.To(),
+		Tags:    params.Tags.Values(),
+	}
+
+	// イテレータで各レコードを順次処理
+	for record := range s.store.ListAllRecords(r.Context(), storeParams) {
 		dateString := record.Timestamp.Local().Format("2006-01-02")
 		dateMap[dateString] += record.Value
 	}

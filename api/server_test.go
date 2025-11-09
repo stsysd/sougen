@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -127,6 +128,51 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	}
 
 	return records[offset:endIndex], nil
+}
+
+func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.ListAllRecordsParams) iter.Seq[*model.Record] {
+	return func(yield func(*model.Record) bool) {
+		var records []*model.Record
+
+		for _, r := range m.records {
+			if r.Project != params.Project || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+				continue
+			}
+
+			// タグフィルタ
+			if len(params.Tags) > 0 {
+				tagMatch := false
+				for _, filterTag := range params.Tags {
+					for _, recordTag := range r.Tags {
+						if recordTag == filterTag {
+							tagMatch = true
+							break
+						}
+					}
+					if tagMatch {
+						break
+					}
+				}
+				if !tagMatch {
+					continue
+				}
+			}
+
+			records = append(records, r)
+		}
+
+		// Timestampの降順にソート（SQLiteの実装と同様に）
+		sort.Slice(records, func(i, j int) bool {
+			return records[i].Timestamp.After(records[j].Timestamp)
+		})
+
+		// すべてのレコードをyield
+		for _, record := range records {
+			if !yield(record) {
+				return
+			}
+		}
+	}
 }
 
 func (m *MockRecordStore) Close() error {
