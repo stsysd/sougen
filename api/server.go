@@ -473,14 +473,12 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// レコードの取得（ヒートマップ生成のためすべてのレコードが必要）
-	sortOrder := model.SortOrderDesc
 	pagination, _ := model.NewPagination("1000000", "0")
 
 	storeParams := &store.ListRecordsParams{
 		Project:    params.ProjectName.String(),
 		From:       params.DateRange.From(),
 		To:         params.DateRange.To(),
-		SortOrder:  sortOrder,
 		Pagination: pagination,
 		Tags:       params.Tags.Values(),
 	}
@@ -551,7 +549,6 @@ type ListRecordsParams struct {
 	DateRange   *model.DateRange
 	Tags        *model.Tags
 	Pagination  *model.Pagination
-	SortOrder   *model.SortOrder
 }
 
 // NewListRecordsParams creates parameters for record listing from HTTP request.
@@ -575,17 +572,11 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 		return nil, err
 	}
 
-	sortOrder, err := model.NewSortOrder(query.Get("order"))
-	if err != nil {
-		return nil, err
-	}
-
 	return &ListRecordsParams{
 		ProjectName: projectName,
 		DateRange:   dateRange,
 		Tags:        tags,
 		Pagination:  pagination,
-		SortOrder:   sortOrder,
 	}, nil
 }
 
@@ -603,7 +594,6 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		Project:    params.ProjectName.String(),
 		From:       params.DateRange.From(),
 		To:         params.DateRange.To(),
-		SortOrder:  params.SortOrder,
 		Pagination: params.Pagination,
 		Tags:       params.Tags.Values(),
 	}

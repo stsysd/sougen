@@ -27,7 +27,6 @@ type ListRecordsParams struct {
 	Project    string
 	From       time.Time
 	To         time.Time
-	SortOrder  *model.SortOrder
 	Pagination *model.Pagination
 	Tags       []string
 }
@@ -381,13 +380,6 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 
 	if err != nil {
 		return nil, err
-	}
-
-	// 降順の場合は結果を逆順にする
-	if params.SortOrder.IsDesc() {
-		for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-			records[i], records[j] = records[j], records[i]
-		}
 	}
 
 	return records, nil

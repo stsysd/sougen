@@ -273,7 +273,7 @@ FROM records r
 LEFT JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
 GROUP BY r.id, r.project, r.value, r.timestamp
-ORDER BY r.timestamp
+ORDER BY r.timestamp DESC
 LIMIT ? OFFSET ?
 `
 
@@ -343,7 +343,7 @@ WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
   AND t.tag IN (/*SLICE:tags*/?)
 GROUP BY r.id, r.project, r.value, r.timestamp
 HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
-ORDER BY r.timestamp
+ORDER BY r.timestamp DESC
 LIMIT ? OFFSET ?
 `
 
