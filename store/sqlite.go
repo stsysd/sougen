@@ -390,9 +390,6 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		}
 	}
 
-	if err != nil {
-		return nil, err
-	}
 
 	return records, nil
 }
