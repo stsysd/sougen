@@ -2,6 +2,8 @@
 package model
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -225,6 +227,102 @@ func NewValue(val *int) (*Value, error) {
 // Int returns the integer value.
 func (v *Value) Int() int {
 	return v.value
+}
+
+// RecordFilterParams represents filter parameters for record queries.
+type RecordFilterParams struct {
+	Project string   `json:"project"`        // Project name for filtering
+	From    string   `json:"from"`           // Start date for filtering (RFC3339)
+	To      string   `json:"to"`             // End date for filtering (RFC3339)
+	Tags    []string `json:"tags,omitempty"` // Tags for filtering
+}
+
+// RecordCursor represents a keyset cursor for record pagination.
+// It embeds RecordFilterParams to guarantee all filter parameters are included.
+type RecordCursor struct {
+	RecordFilterParams        // Embedded filter parameters
+	Timestamp          string `json:"timestamp"` // RFC3339 formatted timestamp of the last record
+	ID                 string `json:"id"`        // UUID of the last record
+}
+
+// ProjectCursor represents a keyset cursor for project pagination.
+type ProjectCursor struct {
+	UpdatedAt string `json:"updated_at"` // RFC3339 formatted updated_at of the last project
+	Name      string `json:"name"`       // Name of the last project
+}
+
+// EncodeRecordCursor encodes a record cursor to a Base64 string.
+func EncodeRecordCursor(timestamp time.Time, id, project string, from, to time.Time, tags []string) string {
+	// Convert zero-value times to empty strings
+	fromStr := ""
+	if !from.IsZero() {
+		fromStr = from.Format(time.RFC3339)
+	}
+	toStr := ""
+	if !to.IsZero() {
+		toStr = to.Format(time.RFC3339)
+	}
+
+	cursor := RecordCursor{
+		RecordFilterParams: RecordFilterParams{
+			Project: project,
+			From:    fromStr,
+			To:      toStr,
+			Tags:    tags,
+		},
+		Timestamp: timestamp.Format(time.RFC3339),
+		ID:        id,
+	}
+	jsonData, _ := json.Marshal(cursor)
+	return base64.URLEncoding.EncodeToString(jsonData)
+}
+
+// DecodeRecordCursor decodes a Base64 encoded record cursor string.
+func DecodeRecordCursor(encoded string) (*RecordCursor, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+
+	decoded, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: failed to decode base64: %w", err)
+	}
+
+	var cursor RecordCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return nil, fmt.Errorf("invalid cursor: failed to unmarshal json: %w", err)
+	}
+
+	return &cursor, nil
+}
+
+// EncodeProjectCursor encodes a project cursor to a Base64 string.
+func EncodeProjectCursor(updatedAt time.Time, name string) string {
+	cursor := ProjectCursor{
+		UpdatedAt: updatedAt.Format(time.RFC3339),
+		Name:      name,
+	}
+	jsonData, _ := json.Marshal(cursor)
+	return base64.URLEncoding.EncodeToString(jsonData)
+}
+
+// DecodeProjectCursor decodes a Base64 encoded project cursor string.
+func DecodeProjectCursor(encoded string) (*ProjectCursor, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+
+	decoded, err := base64.URLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: failed to decode base64: %w", err)
+	}
+
+	var cursor ProjectCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return nil, fmt.Errorf("invalid cursor: failed to unmarshal json: %w", err)
+	}
+
+	return &cursor, nil
 }
 
 // Pagination represents cursor-based pagination parameters for records and projects.

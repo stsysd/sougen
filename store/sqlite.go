@@ -20,16 +20,20 @@ import (
 
 // ListProjectsParams はプロジェクト一覧取得のパラメータです。
 type ListProjectsParams struct {
-	Pagination *model.Pagination
+	Pagination      *model.Pagination
+	CursorUpdatedAt *time.Time // Cursor position: updated_at (nil if no cursor)
+	CursorName      *string    // Cursor position: name (nil if no cursor)
 }
 
 // ListRecordsParams はレコード一覧取得のパラメータです。
 type ListRecordsParams struct {
-	Project    string
-	From       time.Time
-	To         time.Time
-	Pagination *model.Pagination
-	Tags       []string
+	Project         string
+	From            time.Time
+	To              time.Time
+	Pagination      *model.Pagination
+	Tags            []string
+	CursorTimestamp *time.Time // Cursor position: timestamp (nil if no cursor)
+	CursorID        *string    // Cursor position: ID (nil if no cursor)
 }
 
 // ListAllRecordsParams は全レコード取得のパラメータです（ページネーションなし）。
@@ -316,15 +320,10 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	var cursorID string
 	var cursorTimestamp string
 	var cursorColumn interface{}
-	if cursor := params.Pagination.Cursor(); cursor != nil {
-		// カーソルが指定されている場合、そのレコードの情報を取得
-		cursorIDStr := *cursor
-		cursorRecord, err := s.queries.GetRecord(ctx, cursorIDStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get cursor record: %w", err)
-		}
-		cursorID = cursorIDStr
-		cursorTimestamp = cursorRecord.Timestamp
+	if params.CursorTimestamp != nil && params.CursorID != nil {
+		// カーソルが指定されている場合、パラメータから直接取得
+		cursorID = *params.CursorID
+		cursorTimestamp = params.CursorTimestamp.Format(time.RFC3339)
 		cursorColumn = nil // NULL ではなく、有効な値として扱う
 	} else {
 		// カーソルが指定されていない場合は NULL
@@ -685,15 +684,10 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 	var cursorName string
 	var cursorUpdatedAt string
 	var cursorColumn interface{}
-	if cursor := params.Pagination.Cursor(); cursor != nil {
-		// カーソルが指定されている場合、そのプロジェクトの情報を取得
-		cursorProjectName := *cursor
-		cursorProject, err := s.queries.GetProject(ctx, cursorProjectName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get cursor project: %w", err)
-		}
-		cursorName = cursorProjectName
-		cursorUpdatedAt = cursorProject.UpdatedAt
+	if params.CursorUpdatedAt != nil && params.CursorName != nil {
+		// カーソルが指定されている場合、パラメータから直接取得
+		cursorName = *params.CursorName
+		cursorUpdatedAt = params.CursorUpdatedAt.Format(time.RFC3339)
 		cursorColumn = nil // NULL ではなく、有効な値として扱う
 	} else {
 		// カーソルが指定されていない場合は NULL

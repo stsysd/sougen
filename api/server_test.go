@@ -86,7 +86,16 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	var records []*model.Record
 
 	for _, r := range m.records {
-		if r.Project != params.Project || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+		// プロジェクトフィルタ
+		if r.Project != params.Project {
+			continue
+		}
+
+		// 日付範囲フィルタ（From/Toがゼロ値でない場合のみ）
+		if !params.From.IsZero() && r.Timestamp.Before(params.From) {
+			continue
+		}
+		if !params.To.IsZero() && r.Timestamp.After(params.To) {
 			continue
 		}
 
@@ -117,9 +126,10 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 
 	// カーソルが指定されている場合、その位置を見つける
 	startIndex := 0
-	if cursor := params.Pagination.Cursor(); cursor != nil {
+	if params.CursorTimestamp != nil && params.CursorID != nil {
 		for i, r := range records {
-			if r.ID.String() == *cursor {
+			// timestamp と ID の組み合わせで位置を特定
+			if r.Timestamp.Equal(*params.CursorTimestamp) && r.ID.String() == *params.CursorID {
 				startIndex = i + 1 // カーソルの次から開始
 				break
 			}
@@ -1091,8 +1101,17 @@ func TestListRecordsWithPagination(t *testing.T) {
 	// ケース2: limit=4, cursor={3番目のID} で次の4件を取得
 	t.Run("Second Page with Cursor", func(t *testing.T) {
 		// 3番目のレコード（allRecords[2]）をカーソルとして使用
-		cursorID := allRecords[2].ID.String()
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=4&cursor=%s", projectName, cursorID)
+		// Base64エンコードされたcursorを生成
+		thirdRecord := allRecords[2]
+		cursor := model.EncodeRecordCursor(
+			thirdRecord.Timestamp,
+			thirdRecord.ID.String(),
+			projectName,
+			time.Time{}, // from
+			time.Time{}, // to
+			nil,         // tags
+		)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=4&cursor=%s", projectName, cursor)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1126,8 +1145,17 @@ func TestListRecordsWithPagination(t *testing.T) {
 	// ケース3: 最後のレコードをカーソルにした場合、空配列が返される
 	t.Run("Last Record as Cursor", func(t *testing.T) {
 		// 最後のレコード（allRecords[9]）をカーソルとして使用
-		lastRecordID := allRecords[9].ID.String()
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=5&cursor=%s", projectName, lastRecordID)
+		// Base64エンコードされたcursorを生成
+		lastRecord := allRecords[9]
+		cursor := model.EncodeRecordCursor(
+			lastRecord.Timestamp,
+			lastRecord.ID.String(),
+			projectName,
+			time.Time{}, // from
+			time.Time{}, // to
+			nil,         // tags
+		)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=5&cursor=%s", projectName, cursor)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1206,20 +1234,20 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 		}
 	})
 
-	// ケース4: 存在しないcursor（不正なUUID形式ではないが、存在しないレコードID）
-	// モックストアでは存在しないcursorでも動作するので、エラーにならない
+	// ケース4: 不正な形式のcursor（Base64デコードできない文字列）
 	t.Run("Non-existent cursor", func(t *testing.T) {
-		// 実際のストアでは存在しないcursorはエラーになるが、
-		// モックでは単純に次のレコードがないと判定されるだけ
+		// Base64エンコードされていない不正な形式のcursorを渡す
+		// 新しい実装では、API層でcursorをデコードするため、
+		// 不正な形式の場合は400 BadRequestが返される
 		url := fmt.Sprintf("/api/v0/p/%s/r?cursor=non-existent-id", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
 
-		// モックストアでは200を返す（実際のストアでは動作が異なる可能性がある）
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		// 不正な形式のcursorはBadRequestを返す
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
 		}
 	})
 }
@@ -2411,18 +2439,20 @@ func TestListProjectsWithInvalidPaginationParams(t *testing.T) {
 		}
 	})
 
-	// ケース4: 存在しないcursor
-	// モックストアでは存在しないcursorでも動作する
+	// ケース4: 不正な形式のcursor（Base64デコードできない文字列）
 	t.Run("Non-existent cursor", func(t *testing.T) {
+		// Base64エンコードされていない不正な形式のcursorを渡す
+		// 新しい実装では、API層でcursorをデコードするため、
+		// 不正な形式の場合は400 BadRequestが返される
 		url := "/api/v0/p?cursor=non-existent-project"
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
 
-		// モックストアでは200を返す
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		// 不正な形式のcursorはBadRequestを返す
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
 		}
 	})
 }
