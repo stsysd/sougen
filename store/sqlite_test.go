@@ -1485,3 +1485,80 @@ func TestListProjectsWithCursorPagination(t *testing.T) {
 		}
 	})
 }
+
+// TestListAllRecordsWithPagination tests that ListAllRecords correctly handles
+// pagination across multiple pages using the new cursor format
+func TestListAllRecordsWithPagination(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("large-project", "Large project for pagination test")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// テスト用に2500件のレコードを作成（ListAllRecordsのpageSize=1000を超える）
+	project := "large-project"
+	baseTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	expectedCount := 2500
+
+	for i := 0; i < expectedCount; i++ {
+		recordTime := baseTime.Add(time.Duration(i) * time.Minute)
+		record, err := model.NewRecord(recordTime, project, i+1, nil)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+		err = store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to store record: %v", err)
+		}
+	}
+
+	// ListAllRecordsを使って全レコードを取得
+	params := &ListAllRecordsParams{
+		Project: project,
+		From:    baseTime.AddDate(0, 0, -1),
+		To:      baseTime.AddDate(0, 0, 2),
+		Tags:    nil,
+	}
+
+	var retrievedRecords []*model.Record
+	var seenIDs = make(map[string]bool)
+
+	for record, err := range store.ListAllRecords(context.Background(), params) {
+		if err != nil {
+			t.Fatalf("Error during iteration: %v", err)
+		}
+
+		// 重複チェック（カーソルが機能していない場合、同じレコードが繰り返される）
+		recordID := record.ID.String()
+		if seenIDs[recordID] {
+			t.Errorf("DUPLICATE DETECTED: Record ID %s appeared more than once. Cursor pagination is broken!", recordID)
+		}
+		seenIDs[recordID] = true
+
+		retrievedRecords = append(retrievedRecords, record)
+
+		// 安全のため、無限ループを防ぐ
+		if len(retrievedRecords) > expectedCount+100 {
+			t.Fatalf("Retrieved too many records (%d). Possible infinite loop due to broken cursor!", len(retrievedRecords))
+		}
+	}
+
+	// 期待されるレコード数が取得できたか確認
+	if len(retrievedRecords) != expectedCount {
+		t.Errorf("Expected %d records, got %d", expectedCount, len(retrievedRecords))
+	}
+
+	// 重複がないことを再確認
+	if len(seenIDs) != expectedCount {
+		t.Errorf("Expected %d unique record IDs, got %d. Duplicates detected!", expectedCount, len(seenIDs))
+	}
+
+	t.Logf("Successfully retrieved %d unique records across multiple pages", len(retrievedRecords))
+}

@@ -423,17 +423,20 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error] {
 	return func(yield func(*model.Record, error) bool) {
 		const pageSize = 1000
-		var cursor *string
+		var cursorTimestamp *time.Time
+		var cursorID *string
 
 		for {
-			pagination := model.NewPaginationWithValues(pageSize, cursor)
+			pagination := model.NewPaginationWithValues(pageSize, nil)
 
 			listParams := &ListRecordsParams{
-				Project:    params.Project,
-				From:       params.From,
-				To:         params.To,
-				Pagination: pagination,
-				Tags:       params.Tags,
+				Project:         params.Project,
+				From:            params.From,
+				To:              params.To,
+				Pagination:      pagination,
+				Tags:            params.Tags,
+				CursorTimestamp: cursorTimestamp,
+				CursorID:        cursorID,
 			}
 
 			records, err := s.ListRecords(ctx, listParams)
@@ -456,9 +459,11 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 				break
 			}
 
-			// 次のページのためのカーソルを設定
-			lastRecordIDStr := records[len(records)-1].ID.String()
-			cursor = &lastRecordIDStr
+			// 次のページのためのカーソルを設定（新しいkeyset pagination形式）
+			lastRecord := records[len(records)-1]
+			cursorTimestamp = &lastRecord.Timestamp
+			lastRecordIDStr := lastRecord.ID.String()
+			cursorID = &lastRecordIDStr
 		}
 	}
 }
