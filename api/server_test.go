@@ -86,7 +86,16 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	var records []*model.Record
 
 	for _, r := range m.records {
-		if r.Project != params.Project || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+		// プロジェクトフィルタ
+		if r.Project != params.Project {
+			continue
+		}
+
+		// 日付範囲フィルタ（From/Toがゼロ値でない場合のみ）
+		if !params.From.IsZero() && r.Timestamp.Before(params.From) {
+			continue
+		}
+		if !params.To.IsZero() && r.Timestamp.After(params.To) {
 			continue
 		}
 
@@ -112,15 +121,27 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 		return records[i].Timestamp.After(records[j].Timestamp)
 	})
 
-	// ページネーションを適用
-	offset := params.Pagination.Offset()
+	// ページネーションを適用（cursor-based）
 	limit := params.Pagination.Limit()
-	if offset >= len(records) {
+
+	// カーソルが指定されている場合、その位置を見つける
+	startIndex := 0
+	if params.CursorTimestamp != nil && params.CursorID != nil {
+		for i, r := range records {
+			// timestamp と ID の組み合わせで位置を特定
+			if r.Timestamp.Equal(*params.CursorTimestamp) && r.ID.String() == *params.CursorID {
+				startIndex = i + 1 // カーソルの次から開始
+				break
+			}
+		}
+	}
+
+	if startIndex >= len(records) {
 		return []*model.Record{}, nil
 	}
-	endIndex := min(offset+limit, len(records))
+	endIndex := min(startIndex+limit, len(records))
 
-	return records[offset:endIndex], nil
+	return records[startIndex:endIndex], nil
 }
 
 func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.ListAllRecordsParams) iter.Seq2[*model.Record, error] {
@@ -253,20 +274,34 @@ func (m *MockProjectStore) ListProjects(ctx context.Context, params *store.ListP
 		projects = append(projects, project)
 	}
 
-	// updated_atの降順にソート（SQLiteの実装と同様に）
+	// updated_atの降順、nameの昇順にソート（SQLiteの実装と同様に）
 	sort.Slice(projects, func(i, j int) bool {
+		if projects[i].UpdatedAt.Equal(projects[j].UpdatedAt) {
+			return projects[i].Name < projects[j].Name
+		}
 		return projects[i].UpdatedAt.After(projects[j].UpdatedAt)
 	})
 
-	// ページネーションを適用
-	offset := params.Pagination.Offset()
+	// カーソルベースのページネーションを適用
+	startIndex := 0
+	if cursor := params.Pagination.Cursor(); cursor != nil {
+		// カーソルが指定されている場合、そのプロジェクトの次から開始
+		for i, p := range projects {
+			if p.Name == *cursor {
+				startIndex = i + 1
+				break
+			}
+		}
+	}
+
+	// startIndexから指定された件数を取得
 	limit := params.Pagination.Limit()
-	if offset >= len(projects) {
+	if startIndex >= len(projects) {
 		return []*model.Project{}, nil
 	}
-	endIndex := min(offset+limit, len(projects))
+	endIndex := min(startIndex+limit, len(projects))
 
-	return projects[offset:endIndex], nil
+	return projects[startIndex:endIndex], nil
 }
 
 func (m *MockProjectStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
@@ -965,15 +1000,16 @@ func TestListRecordsEndpoint(t *testing.T) {
 	}
 
 	// レスポンスボディをデコード
-	var responseRecords []*model.Record
-	if err := json.NewDecoder(w.Body).Decode(&responseRecords); err != nil {
+	var response ListRecordsResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 		t.Fatalf("Failed to decode response body: %v", err)
 	}
 
 	// 正しいレコード数が返されていることを確認
-	if len(responseRecords) != 3 {
-		t.Errorf("Expected 3 records, got %d", len(responseRecords))
+	if len(response.Result) != 3 {
+		t.Errorf("Expected 3 records, got %d", len(response.Result))
 	}
+	responseRecords := response.Result
 
 	// レコードの内容を確認
 	t.Logf("Response records: %+v", responseRecords)
@@ -1021,9 +1057,9 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	server := NewServer(mockStore, newTestConfig())
 
-	// ケース1: limit=3, offset=0 で最初の3件を取得（デフォルトは新しい順）
+	// ケース1: limit=3 で最初の3件を取得（カーソルなし）
 	t.Run("First Page", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=3&offset=0", projectName)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=3", projectName)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1034,11 +1070,12 @@ func TestListRecordsWithPagination(t *testing.T) {
 			return
 		}
 
-		var records []*model.Record
-		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+		var response ListRecordsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
+		records := response.Result
 		if len(records) != 3 {
 			t.Errorf("Expected 3 records, got %d", len(records))
 		}
@@ -1049,41 +1086,32 @@ func TestListRecordsWithPagination(t *testing.T) {
 				t.Errorf("Record at index %d has incorrect ID", i)
 			}
 		}
-	})
 
-	// ケース2: limit=4, offset=3 で次の4件を取得（デフォルトは新しい順）
-	t.Run("Second Page", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=4&offset=3", projectName)
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-			return
-		}
-
-		var records []*model.Record
-		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
-			t.Fatalf("Failed to decode response body: %v", err)
-		}
-
-		if len(records) != 4 {
-			t.Errorf("Expected 4 records, got %d", len(records))
-		}
-
-		// オフセット3から4件のレコードが正しいか確認
-		for i := range 4 {
-			if records[i].ID != allRecords[i+3].ID {
-				t.Errorf("Record at index %d has incorrect ID", i)
+		// nextフィールドが存在することを確認（まだレコードが残っている）
+		if response.Next == nil {
+			t.Error("Expected next field to be present")
+		} else {
+			// nextにcursorが含まれていることを確認
+			if !strings.Contains(*response.Next, "cursor=") {
+				t.Errorf("Expected next URL to contain cursor parameter, got: %s", *response.Next)
 			}
 		}
 	})
 
-	// ケース3: offset が範囲外の場合、空配列が返される
-	t.Run("Out of Range Offset", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=5&offset=20", projectName)
+	// ケース2: limit=4, cursor={3番目のID} で次の4件を取得
+	t.Run("Second Page with Cursor", func(t *testing.T) {
+		// 3番目のレコード（allRecords[2]）をカーソルとして使用
+		// Base64エンコードされたcursorを生成
+		thirdRecord := allRecords[2]
+		cursor := model.EncodeRecordCursor(
+			thirdRecord.Timestamp,
+			thirdRecord.ID.String(),
+			projectName,
+			time.Time{}, // from
+			time.Time{}, // to
+			nil,         // tags
+		)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=4&cursor=%s", projectName, cursor)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1094,13 +1122,132 @@ func TestListRecordsWithPagination(t *testing.T) {
 			return
 		}
 
-		var records []*model.Record
-		if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+		var response ListRecordsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(records) != 0 {
-			t.Errorf("Expected 0 records, got %d", len(records))
+		records := response.Result
+		if len(records) != 4 {
+			t.Errorf("Expected 4 records, got %d", len(records))
+		}
+
+		// カーソルの次のレコードから4件が返されることを確認
+		for i := range 4 {
+			expectedIndex := i + 3 // allRecords[3], [4], [5], [6]
+			if records[i].ID != allRecords[expectedIndex].ID {
+				t.Errorf("Record at index %d has incorrect ID, expected %s, got %s",
+					i, allRecords[expectedIndex].ID, records[i].ID)
+			}
+		}
+	})
+
+	// ケース3: 最後のレコードをカーソルにした場合、空配列が返される
+	t.Run("Last Record as Cursor", func(t *testing.T) {
+		// 最後のレコード（allRecords[9]）をカーソルとして使用
+		// Base64エンコードされたcursorを生成
+		lastRecord := allRecords[9]
+		cursor := model.EncodeRecordCursor(
+			lastRecord.Timestamp,
+			lastRecord.ID.String(),
+			projectName,
+			time.Time{}, // from
+			time.Time{}, // to
+			nil,         // tags
+		)
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=5&cursor=%s", projectName, cursor)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var response ListRecordsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+			t.Fatalf("Failed to decode response body: %v", err)
+		}
+
+		if len(response.Result) != 0 {
+			t.Errorf("Expected 0 records, got %d", len(response.Result))
+		}
+
+		// nextフィールドがないことを確認（次ページなし）
+		if response.Next != nil {
+			t.Errorf("Expected next field to be nil, got: %s", *response.Next)
+		}
+	})
+}
+
+// TestListRecordsWithInvalidPaginationParams tests pagination with invalid parameters
+func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockRecordStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	projectName := "test-project"
+
+	// テスト用にレコードを1件作成
+	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+	record, _ := model.NewRecord(baseTime, projectName, 1, nil)
+	mockStore.CreateRecord(context.Background(), record)
+
+	// ケース1: 無効なlimit（非数値）
+	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=abc", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース2: 無効なlimit（負の数）
+	t.Run("Invalid limit (negative)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=-10", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース3: 無効なlimit（ゼロ）
+	t.Run("Invalid limit (zero)", func(t *testing.T) {
+		url := fmt.Sprintf("/api/v0/p/%s/r?limit=0", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース4: 不正な形式のcursor（Base64デコードできない文字列）
+	t.Run("Non-existent cursor", func(t *testing.T) {
+		// Base64エンコードされていない不正な形式のcursorを渡す
+		// 新しい実装では、API層でcursorをデコードするため、
+		// 不正な形式の場合は400 BadRequestが返される
+		url := fmt.Sprintf("/api/v0/p/%s/r?cursor=non-existent-id", projectName)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		// 不正な形式のcursorはBadRequestを返す
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
 		}
 	})
 }
@@ -1147,7 +1294,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクトのレコードが削除されたことを確認
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	testRecords, err := mockStore.ListRecords(context.Background(), &store.ListRecordsParams{
 		Project:    "test",
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -1655,11 +1802,12 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 				t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 			}
 
-			var records []*model.Record
-			if err := json.NewDecoder(w.Body).Decode(&records); err != nil {
+			var response ListRecordsResponse
+			if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 				t.Fatalf("Failed to decode response: %v", err)
 			}
 
+			records := response.Result
 			if len(records) != tc.expectedCount {
 				t.Errorf("Expected %d records, got %d", tc.expectedCount, len(records))
 			}
@@ -1930,15 +2078,15 @@ func TestListProjectsEndpoint(t *testing.T) {
 	}
 
 	// レスポンスボディをパース
-	var projects []*model.Project
-	err := json.Unmarshal(w.Body.Bytes(), &projects)
+	var response ListProjectsResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
 	// プロジェクト数をチェック
-	if len(projects) != 2 {
-		t.Errorf("Expected 2 projects, got %d", len(projects))
+	if len(response.Result) != 2 {
+		t.Errorf("Expected 2 projects, got %d", len(response.Result))
 	}
 }
 
@@ -1968,7 +2116,7 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 	}
 
 	// レコードが削除されたことを確認
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), &store.ListRecordsParams{
 		Project:    "delete-test",
 		From:       time.Now().Add(-24 * time.Hour),
@@ -2111,9 +2259,9 @@ func TestListProjectsWithPagination(t *testing.T) {
 		allProjects = append(allProjects, project)
 	}
 
-	// ケース1: limit=2, offset=0 で最初の2件を取得
+	// ケース1: limit=2 で最初の2件を取得（cursor指定なし）
 	t.Run("First Page", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=0"
+		url := "/api/v0/p?limit=2"
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -2124,20 +2272,41 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(projects) != 2 {
-			t.Errorf("Expected 2 projects, got %d", len(projects))
+		if len(response.Result) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(response.Result))
+		}
+
+		// 次ページが存在することを確認
+		if response.Next == nil {
+			t.Error("Expected next page URL, got nil")
+		} else if !strings.Contains(*response.Next, "cursor=") {
+			t.Errorf("Expected next URL to contain cursor parameter, got: %s", *response.Next)
 		}
 	})
 
-	// ケース2: limit=2, offset=2 で次の2件を取得
-	t.Run("Second Page", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=2"
-		req := httptest.NewRequest(http.MethodGet, url, nil)
+	// ケース2: cursorを使って次の2件を取得
+	t.Run("Second Page with Cursor", func(t *testing.T) {
+		// 最初のページを取得してcursorを取得
+		firstPageURL := "/api/v0/p?limit=2"
+		firstReq := httptest.NewRequest(http.MethodGet, firstPageURL, nil)
+		firstReq.Header.Set("X-API-Key", testAPIKey)
+		firstW := httptest.NewRecorder()
+		server.ServeHTTP(firstW, firstReq)
+
+		var firstResponse ListProjectsResponse
+		json.NewDecoder(firstW.Body).Decode(&firstResponse)
+
+		if firstResponse.Next == nil {
+			t.Fatal("Expected next page URL in first response")
+		}
+
+		// 次ページを取得
+		req := httptest.NewRequest(http.MethodGet, *firstResponse.Next, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
@@ -2147,19 +2316,24 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(projects) != 2 {
-			t.Errorf("Expected 2 projects, got %d", len(projects))
+		if len(response.Result) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(response.Result))
+		}
+
+		// 次ページが存在することを確認
+		if response.Next == nil {
+			t.Error("Expected next page URL, got nil")
 		}
 	})
 
-	// ケース3: limit=2, offset=4 で最後の1件を取得
+	// ケース3: 最後のページ（残り1件）
 	t.Run("Last Page", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=4"
+		url := "/api/v0/p?limit=10"
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -2170,40 +2344,23 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(projects) != 1 {
-			t.Errorf("Expected 1 project, got %d", len(projects))
+		// 全5件が返される
+		if len(response.Result) != 5 {
+			t.Errorf("Expected 5 projects, got %d", len(response.Result))
+		}
+
+		// 次ページは存在しない
+		if response.Next != nil {
+			t.Errorf("Expected no next page URL, got: %s", *response.Next)
 		}
 	})
 
-	// ケース4: offset が範囲外の場合、空配列が返される
-	t.Run("Out of Range Offset", func(t *testing.T) {
-		url := "/api/v0/p?limit=2&offset=10"
-		req := httptest.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("X-API-Key", testAPIKey)
-		w := httptest.NewRecorder()
-		server.ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-			return
-		}
-
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
-			t.Fatalf("Failed to decode response body: %v", err)
-		}
-
-		if len(projects) != 0 {
-			t.Errorf("Expected 0 projects, got %d", len(projects))
-		}
-	})
-
-	// ケース5: パラメータなしでデフォルトのlimitが適用される
+	// ケース4: パラメータなしでデフォルトのlimitが適用される
 	t.Run("Default Pagination", func(t *testing.T) {
 		url := "/api/v0/p"
 		req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -2216,14 +2373,86 @@ func TestListProjectsWithPagination(t *testing.T) {
 			return
 		}
 
-		var projects []*model.Project
-		if err := json.NewDecoder(w.Body).Decode(&projects); err != nil {
+		var response ListProjectsResponse
+		if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
 		// デフォルトのlimitは100なので、5件すべて返される
-		if len(projects) != 5 {
-			t.Errorf("Expected 5 projects, got %d", len(projects))
+		if len(response.Result) != 5 {
+			t.Errorf("Expected 5 projects, got %d", len(response.Result))
+		}
+
+		// 次ページは存在しない
+		if response.Next != nil {
+			t.Errorf("Expected no next page URL, got: %s", *response.Next)
+		}
+	})
+}
+
+// TestListProjectsWithInvalidPaginationParams tests project pagination with invalid parameters
+func TestListProjectsWithInvalidPaginationParams(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockCombinedStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用にプロジェクトを1件作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+
+	// ケース1: 無効なlimit（非数値）
+	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {
+		url := "/api/v0/p?limit=invalid"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース2: 無効なlimit（負の数）
+	t.Run("Invalid limit (negative)", func(t *testing.T) {
+		url := "/api/v0/p?limit=-5"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース3: 無効なlimit（ゼロ）
+	t.Run("Invalid limit (zero)", func(t *testing.T) {
+		url := "/api/v0/p?limit=0"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	// ケース4: 不正な形式のcursor（Base64デコードできない文字列）
+	t.Run("Non-existent cursor", func(t *testing.T) {
+		// Base64エンコードされていない不正な形式のcursorを渡す
+		// 新しい実装では、API層でcursorをデコードするため、
+		// 不正な形式の場合は400 BadRequestが返される
+		url := "/api/v0/p?cursor=non-existent-project"
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		// 不正な形式のcursorはBadRequestを返す
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
 		}
 	})
 }

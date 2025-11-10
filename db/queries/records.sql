@@ -22,6 +22,7 @@ DELETE FROM records WHERE id = ?;
 -- name: ListRecords :many
 -- Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 -- Optimized query to avoid n+1 problem by using GROUP_CONCAT for tags
+-- Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 SELECT
     r.id,
     r.project,
@@ -31,14 +32,16 @@ SELECT
 FROM records r
 LEFT JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+  AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
 GROUP BY r.id, r.project, r.value, r.timestamp
-ORDER BY r.timestamp DESC
-LIMIT ? OFFSET ?;
+ORDER BY r.timestamp DESC, r.id
+LIMIT ?;
 
 -- name: ListRecordsWithTags :many
 -- Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling
 -- Returns records that have all of the specified tags
 -- Optimized query to avoid n+1 problem by using GROUP_CONCAT for all tags
+-- Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 SELECT
     r.id,
     r.project,
@@ -49,10 +52,11 @@ FROM records r
 INNER JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
   AND t.tag IN (sqlc.slice(tags))
+  AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
 GROUP BY r.id, r.project, r.value, r.timestamp
 HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
-ORDER BY r.timestamp DESC
-LIMIT ? OFFSET ?;
+ORDER BY r.timestamp DESC, r.id
+LIMIT ?;
 
 
 -- name: DeleteProject :exec
@@ -88,10 +92,12 @@ WHERE name = ?;
 DELETE FROM projects WHERE name = ?;
 
 -- name: ListProjects :many
+-- Cursor-based pagination: uses cursor_updated_at and cursor_name for pagination
 SELECT name, description, created_at, updated_at
 FROM projects
-ORDER BY updated_at DESC
-LIMIT ? OFFSET ?;
+WHERE ? IS NULL OR updated_at < ? OR (updated_at = ? AND name > ?)
+ORDER BY updated_at DESC, name
+LIMIT ?;
 
 -- name: GetProjectTags :many
 SELECT DISTINCT tag

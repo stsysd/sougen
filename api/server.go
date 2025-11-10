@@ -549,13 +549,56 @@ type ListRecordsParams struct {
 }
 
 // NewListRecordsParams creates parameters for record listing from HTTP request.
+// If cursor is present, all filter parameters are restored from the cursor.
 func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
+	query := r.URL.Query()
+	cursorStr := query.Get("cursor")
+
+	// If cursor exists, restore all parameters from cursor
+	if cursorStr != "" {
+		cursor, err := model.DecodeRecordCursor(cursorStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cursor: %w", err)
+		}
+
+		// Restore project name from cursor
+		projectName, err := model.NewProjectName(cursor.Project)
+		if err != nil {
+			return nil, err
+		}
+
+		// Restore date range from cursor
+		dateRange, err := model.NewDateRange(cursor.From, cursor.To)
+		if err != nil {
+			return nil, err
+		}
+
+		// Restore tags from cursor
+		var tagsStr string
+		if len(cursor.Tags) > 0 {
+			tagsStr = strings.Join(cursor.Tags, ",")
+		}
+		tags := model.NewTags(tagsStr)
+
+		// Create pagination with cursor
+		pagination, err := model.NewPagination(query.Get("limit"), cursorStr)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ListRecordsParams{
+			ProjectName: projectName,
+			DateRange:   dateRange,
+			Tags:        tags,
+			Pagination:  pagination,
+		}, nil
+	}
+
+	// No cursor: use regular parameters from query/path
 	projectName, err := model.NewProjectName(r.PathValue("project_name"))
 	if err != nil {
 		return nil, err
 	}
-
-	query := r.URL.Query()
 
 	dateRange, err := model.NewDateRange(query.Get("from"), query.Get("to"))
 	if err != nil {
@@ -564,7 +607,7 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 
 	tags := model.NewTags(query.Get("tags"))
 
-	pagination, err := model.NewPagination(query.Get("limit"), query.Get("offset"))
+	pagination, err := model.NewPagination(query.Get("limit"), "")
 	if err != nil {
 		return nil, err
 	}
@@ -577,6 +620,34 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 	}, nil
 }
 
+// ListRecordsResponse represents the paginated response for list records.
+type ListRecordsResponse struct {
+	Result []*model.Record `json:"result"`
+	Next   *string         `json:"next,omitempty"`
+}
+
+// buildRecordCursorPath builds the next page path with encoded cursor for records.
+func buildRecordCursorPath(basePath string, lastRecord *model.Record, project string, from, to time.Time, tags []string, limit int) string {
+	cursor := model.EncodeRecordCursor(
+		lastRecord.Timestamp,
+		lastRecord.ID.String(),
+		project,
+		from,
+		to,
+		tags,
+	)
+	return fmt.Sprintf("%s?cursor=%s&limit=%d", basePath, cursor, limit)
+}
+
+// buildProjectCursorPath builds the next page path with encoded cursor for projects.
+func buildProjectCursorPath(basePath string, lastProject *model.Project, limit int) string {
+	cursor := model.EncodeProjectCursor(
+		lastProject.UpdatedAt,
+		lastProject.Name,
+	)
+	return fmt.Sprintf("%s?cursor=%s&limit=%d", basePath, cursor, limit)
+}
+
 // handleListRecords はプロジェクトに属するレコードの一覧を取得するハンドラーです。
 func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
@@ -586,16 +657,39 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// store.ListRecordsParams を作成
-	storeParams := &store.ListRecordsParams{
-		Project:    params.ProjectName.String(),
-		From:       params.DateRange.From(),
-		To:         params.DateRange.To(),
-		Pagination: params.Pagination,
-		Tags:       params.Tags.Values(),
+	// Decode cursor if present to extract position information
+	var cursorTimestamp *time.Time
+	var cursorID *string
+	if params.Pagination.Cursor() != nil {
+		decodedCursor, err := model.DecodeRecordCursor(*params.Pagination.Cursor())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid cursor: %v", err), http.StatusBadRequest)
+			return
+		}
+		ts, err := time.Parse(time.RFC3339, decodedCursor.Timestamp)
+		if err != nil {
+			http.Error(w, "Invalid cursor timestamp", http.StatusBadRequest)
+			return
+		}
+		cursorTimestamp = &ts
+		cursorID = &decodedCursor.ID
 	}
 
-	// レコードの取得
+	// store.ListRecordsParams を作成
+	storeParams := &store.ListRecordsParams{
+		Project:         params.ProjectName.String(),
+		From:            params.DateRange.From(),
+		To:              params.DateRange.To(),
+		Pagination:      params.Pagination,
+		Tags:            params.Tags.Values(),
+		CursorTimestamp: cursorTimestamp,
+		CursorID:        cursorID,
+	}
+
+	// レコードの取得（limit+1 件取得して次ページの有無を判定）
+	originalLimit := params.Pagination.Limit()
+	storeParams.Pagination = model.NewPaginationWithValues(originalLimit+1, params.Pagination.Cursor())
+
 	records, err := s.store.ListRecords(r.Context(), storeParams)
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
@@ -603,9 +697,33 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// レスポンスの構築
+	response := &ListRecordsResponse{
+		Result: records,
+	}
+
+	// 次ページの URL を生成
+	if len(records) > originalLimit {
+		// limit+1 件取得できた場合、次ページが存在する
+		response.Result = records[:originalLimit]
+		lastRecord := records[originalLimit-1]
+
+		// 次ページの URL パスを生成（全パラメータをcursorにエンコード）
+		nextPath := buildRecordCursorPath(
+			r.URL.Path,
+			lastRecord,
+			params.ProjectName.String(),
+			params.DateRange.From(),
+			params.DateRange.To(),
+			params.Tags.Values(),
+			originalLimit,
+		)
+		response.Next = &nextPath
+	}
+
 	// レスポンスの返却
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(records); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Error encoding response: %v", err)
 	}
 }
@@ -673,7 +791,7 @@ type ListProjectsParams struct {
 func NewListProjectsParams(r *http.Request) (*ListProjectsParams, error) {
 	query := r.URL.Query()
 
-	pagination, err := model.NewPagination(query.Get("limit"), query.Get("offset"))
+	pagination, err := model.NewPagination(query.Get("limit"), query.Get("cursor"))
 	if err != nil {
 		return nil, err
 	}
@@ -681,6 +799,12 @@ func NewListProjectsParams(r *http.Request) (*ListProjectsParams, error) {
 	return &ListProjectsParams{
 		Pagination: pagination,
 	}, nil
+}
+
+// ListProjectsResponse はプロジェクト一覧取得のレスポンスです。
+type ListProjectsResponse struct {
+	Result []*model.Project `json:"result"`
+	Next   *string          `json:"next,omitempty"`
 }
 
 // handleListProjects はプロジェクト一覧取得をハンドリングします。
@@ -698,9 +822,30 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// store.ListProjectsParams を作成
+	// Decode cursor if present to extract position information
+	var cursorUpdatedAt *time.Time
+	var cursorName *string
+	if params.Pagination.Cursor() != nil {
+		decodedCursor, err := model.DecodeProjectCursor(*params.Pagination.Cursor())
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid cursor: %v", err), http.StatusBadRequest)
+			return
+		}
+		updatedAt, err := time.Parse(time.RFC3339, decodedCursor.UpdatedAt)
+		if err != nil {
+			http.Error(w, "Invalid cursor updated_at", http.StatusBadRequest)
+			return
+		}
+		cursorUpdatedAt = &updatedAt
+		cursorName = &decodedCursor.Name
+	}
+
+	// プロジェクトの取得（limit+1 件取得して次ページの有無を判定）
+	originalLimit := params.Pagination.Limit()
 	storeParams := &store.ListProjectsParams{
-		Pagination: params.Pagination,
+		Pagination:      model.NewPaginationWithValues(originalLimit+1, params.Pagination.Cursor()),
+		CursorUpdatedAt: cursorUpdatedAt,
+		CursorName:      cursorName,
 	}
 
 	projects, err := projectStore.ListProjects(r.Context(), storeParams)
@@ -709,14 +854,26 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// レスポンスの設定
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	// レスポンスの構築
+	response := &ListProjectsResponse{
+		Result: projects,
+	}
 
-	// JSONとしてレスポンスを返す
-	if err := json.NewEncoder(w).Encode(projects); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
-		return
+	// 次ページの URL を生成
+	if len(projects) > originalLimit {
+		// limit+1 件取得できた場合、次ページが存在する
+		response.Result = projects[:originalLimit]
+		lastProject := projects[originalLimit-1]
+
+		// 次ページの URL パスを生成
+		nextPath := buildProjectCursorPath(r.URL.Path, lastProject, originalLimit)
+		response.Next = &nextPath
+	}
+
+	// レスポンスの返却
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
 	}
 }
 

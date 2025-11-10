@@ -280,7 +280,7 @@ func TestListRecords(t *testing.T) {
 	// テストの実行
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pagination, _ := model.NewPagination("100", "0")
+			pagination, _ := model.NewPagination("100", "")
 			result, err := store.ListRecords(context.Background(), &ListRecordsParams{
 				Project:    project,
 				From:       tc.from,
@@ -371,7 +371,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1のレコード数を確認
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	project1Records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    project1,
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -543,7 +543,7 @@ func TestListRecordsWithTags(t *testing.T) {
 			toTime := baseTime.Add(5 * time.Hour)
 
 			// タグフィルタでレコードを取得
-			pagination, _ := model.NewPagination("100", "0")
+			pagination, _ := model.NewPagination("100", "")
 			records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 				Project:    project,
 				From:       fromTime,
@@ -616,7 +616,7 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 	// 存在しないタグでフィルタ
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(1 * time.Hour)
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    project,
 		From:       fromTime,
@@ -666,7 +666,7 @@ func TestListRecordsDateRange(t *testing.T) {
 	// 最初の2日分のみを取得
 	fromTime := baseTime.Add(-1 * time.Hour)
 	toTime := baseTime.Add(25 * time.Hour)
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    project,
 		From:       fromTime,
@@ -893,7 +893,7 @@ func TestListProjects(t *testing.T) {
 	}
 
 	// プロジェクト一覧を取得
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	params := &ListProjectsParams{Pagination: pagination}
 	retrievedProjects, err := store.ListProjects(context.Background(), params)
 	if err != nil {
@@ -930,7 +930,7 @@ func TestListEmptyProjects(t *testing.T) {
 	defer cleanup()
 
 	// プロジェクト一覧を取得（空のはず）
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	params := &ListProjectsParams{Pagination: pagination}
 	projects, err := store.ListProjects(context.Background(), params)
 	if err != nil {
@@ -1018,7 +1018,7 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 	}
 
 	// 外部キー制約がないため、関連するレコードは残っている
-	pagination, _ := model.NewPagination("100", "0")
+	pagination, _ := model.NewPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
 		Project:    "test-project",
 		From:       timestamp.Add(-1 * time.Hour),
@@ -1247,4 +1247,318 @@ func TestGetProjectTagsWithMultipleRecords(t *testing.T) {
 	if len(tags) != len(tagSet) {
 		t.Error("Duplicate tags found in response")
 	}
+}
+
+// TestListRecordsWithCursorPagination tests cursor-based pagination for records
+func TestListRecordsWithCursorPagination(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("exercise", "Exercise tracking")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// テスト用に10件のレコードを作成
+	project := "exercise"
+	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+
+	for i := 0; i < 10; i++ {
+		recordTime := baseTime.Add(time.Duration(i) * time.Hour)
+		record, err := model.NewRecord(recordTime, project, i+1, nil)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+		err = store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to store record: %v", err)
+		}
+	}
+
+	// データベースから全レコードを取得して期待値の配列を作成（timestamp DESC順）
+	allRecordsParams := &ListRecordsParams{
+		Project:    project,
+		From:       baseTime.AddDate(0, 0, -1),
+		To:         baseTime.AddDate(0, 0, 1),
+		Pagination: model.NewPaginationWithValues(100, nil),
+	}
+	allRecords, err := store.ListRecords(context.Background(), allRecordsParams)
+	if err != nil {
+		t.Fatalf("Failed to get all records: %v", err)
+	}
+	if len(allRecords) != 10 {
+		t.Fatalf("Expected 10 records, got %d", len(allRecords))
+	}
+
+	// ケース1: 最初のページを取得（limit=3, cursorなし）
+	t.Run("First page without cursor", func(t *testing.T) {
+		params := &ListRecordsParams{
+			Project:    project,
+			From:       baseTime.AddDate(0, 0, -1),
+			To:         baseTime.AddDate(0, 0, 1),
+			Pagination: model.NewPaginationWithValues(3, nil),
+		}
+
+		records, err := store.ListRecords(context.Background(), params)
+		if err != nil {
+			t.Fatalf("Failed to list records: %v", err)
+		}
+
+		if len(records) != 3 {
+			t.Errorf("Expected 3 records, got %d", len(records))
+		}
+
+		// 最初の3件が取得されているか確認（降順なので最新の3件）
+		for i := 0; i < 3; i++ {
+			if records[i].ID != allRecords[i].ID {
+				t.Errorf("Record at index %d has incorrect ID. Expected %s, got %s",
+					i, allRecords[i].ID, records[i].ID)
+			}
+		}
+	})
+
+	// ケース2: カーソルを使って2ページ目を取得（limit=3）
+	// これがバグを検知するための重要なテスト
+	t.Run("Second page with cursor", func(t *testing.T) {
+		// 3番目のレコード（allRecords[2]）の後から取得
+		cursorRecord := allRecords[2]
+		cursorTimestamp := cursorRecord.Timestamp
+		cursorID := cursorRecord.ID.String()
+
+		params := &ListRecordsParams{
+			Project:         project,
+			From:            baseTime.AddDate(0, 0, -1),
+			To:              baseTime.AddDate(0, 0, 1),
+			Pagination:      model.NewPaginationWithValues(3, nil),
+			CursorTimestamp: &cursorTimestamp,
+			CursorID:        &cursorID,
+		}
+
+		records, err := store.ListRecords(context.Background(), params)
+		if err != nil {
+			t.Fatalf("Failed to list records with cursor: %v", err)
+		}
+
+		if len(records) != 3 {
+			t.Errorf("Expected 3 records on second page, got %d", len(records))
+		}
+
+		// 重要: 2ページ目は1ページ目と異なるレコードであるべき
+		// カーソルの次のレコード（allRecords[3], [4], [5]）が返されるべき
+		for i := 0; i < 3; i++ {
+			expectedIndex := i + 3
+			if records[i].ID != allRecords[expectedIndex].ID {
+				t.Errorf("Record at index %d on second page has incorrect ID. Expected %s (from allRecords[%d]), got %s",
+					i, allRecords[expectedIndex].ID, expectedIndex, records[i].ID)
+			}
+		}
+
+		// バグがある場合: 1ページ目と同じレコードが返される
+		// このチェックでバグを明示的に検出
+		if len(records) > 0 && records[0].ID == allRecords[0].ID {
+			t.Error("BUG DETECTED: Second page returned same records as first page. Cursor is not working!")
+		}
+	})
+
+	// ケース3: 最後のレコードをカーソルにした場合、空配列が返される
+	t.Run("Last record as cursor", func(t *testing.T) {
+		lastRecord := allRecords[len(allRecords)-1]
+		cursorTimestamp := lastRecord.Timestamp
+		cursorID := lastRecord.ID.String()
+
+		params := &ListRecordsParams{
+			Project:         project,
+			From:            baseTime.AddDate(0, 0, -1),
+			To:              baseTime.AddDate(0, 0, 1),
+			Pagination:      model.NewPaginationWithValues(5, nil),
+			CursorTimestamp: &cursorTimestamp,
+			CursorID:        &cursorID,
+		}
+
+		records, err := store.ListRecords(context.Background(), params)
+		if err != nil {
+			t.Fatalf("Failed to list records with cursor: %v", err)
+		}
+
+		if len(records) != 0 {
+			t.Errorf("Expected 0 records after last record, got %d", len(records))
+		}
+	})
+}
+
+// TestListProjectsWithCursorPagination tests cursor-based pagination for projects
+func TestListProjectsWithCursorPagination(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// テスト用に10件のプロジェクトを作成
+	for i := 0; i < 10; i++ {
+		projectName := strings.Repeat("a", i+1) // a, aa, aaa, ... (アルファベット順)
+		project, err := model.NewProject(projectName, "Test project "+projectName)
+		if err != nil {
+			t.Fatalf("Failed to create project model: %v", err)
+		}
+		err = store.CreateProject(context.Background(), project)
+		if err != nil {
+			t.Fatalf("Failed to create project: %v", err)
+		}
+
+		// 少し時間をずらして updated_at を異なる値にする
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	// データベースから全プロジェクトを取得して期待値の配列を作成（updated_at DESC, name順）
+	allProjectsParams := &ListProjectsParams{
+		Pagination: model.NewPaginationWithValues(100, nil),
+	}
+	allProjects, err := store.ListProjects(context.Background(), allProjectsParams)
+	if err != nil {
+		t.Fatalf("Failed to get all projects: %v", err)
+	}
+	if len(allProjects) != 10 {
+		t.Fatalf("Expected 10 projects, got %d", len(allProjects))
+	}
+
+	// ケース1: 最初のページを取得（limit=3, cursorなし）
+	t.Run("First page without cursor", func(t *testing.T) {
+		params := &ListProjectsParams{
+			Pagination: model.NewPaginationWithValues(3, nil),
+		}
+
+		projects, err := store.ListProjects(context.Background(), params)
+		if err != nil {
+			t.Fatalf("Failed to list projects: %v", err)
+		}
+
+		if len(projects) != 3 {
+			t.Errorf("Expected 3 projects, got %d", len(projects))
+		}
+
+		// 最初の3件が取得されているか確認
+		for i := 0; i < 3; i++ {
+			if projects[i].Name != allProjects[i].Name {
+				t.Errorf("Project at index %d has incorrect name. Expected %s, got %s",
+					i, allProjects[i].Name, projects[i].Name)
+			}
+		}
+	})
+
+	// ケース2: カーソルを使って2ページ目を取得（limit=3）
+	t.Run("Second page with cursor", func(t *testing.T) {
+		// 3番目のプロジェクト（allProjects[2]）の後から取得
+		cursorProject := allProjects[2]
+		cursorUpdatedAt := cursorProject.UpdatedAt
+		cursorName := cursorProject.Name
+
+		params := &ListProjectsParams{
+			Pagination:      model.NewPaginationWithValues(3, nil),
+			CursorUpdatedAt: &cursorUpdatedAt,
+			CursorName:      &cursorName,
+		}
+
+		projects, err := store.ListProjects(context.Background(), params)
+		if err != nil {
+			t.Fatalf("Failed to list projects with cursor: %v", err)
+		}
+
+		if len(projects) != 3 {
+			t.Errorf("Expected 3 projects on second page, got %d", len(projects))
+		}
+
+		// 2ページ目は1ページ目と異なるプロジェクトであるべき
+		for i := 0; i < 3; i++ {
+			expectedIndex := i + 3
+			if projects[i].Name != allProjects[expectedIndex].Name {
+				t.Errorf("Project at index %d on second page has incorrect name. Expected %s (from allProjects[%d]), got %s",
+					i, allProjects[expectedIndex].Name, expectedIndex, projects[i].Name)
+			}
+		}
+
+		// バグがある場合: 1ページ目と同じプロジェクトが返される
+		if len(projects) > 0 && projects[0].Name == allProjects[0].Name {
+			t.Error("BUG DETECTED: Second page returned same projects as first page. Cursor is not working!")
+		}
+	})
+}
+
+// TestListAllRecordsWithPagination tests that ListAllRecords correctly handles
+// pagination across multiple pages using the new cursor format
+func TestListAllRecordsWithPagination(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを事前に作成
+	projectModel, err := model.NewProject("large-project", "Large project for pagination test")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), projectModel)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// テスト用に2500件のレコードを作成（ListAllRecordsのpageSize=1000を超える）
+	project := "large-project"
+	baseTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	expectedCount := 2500
+
+	for i := 0; i < expectedCount; i++ {
+		recordTime := baseTime.Add(time.Duration(i) * time.Minute)
+		record, err := model.NewRecord(recordTime, project, i+1, nil)
+		if err != nil {
+			t.Fatalf("Failed to create record: %v", err)
+		}
+		err = store.CreateRecord(context.Background(), record)
+		if err != nil {
+			t.Fatalf("Failed to store record: %v", err)
+		}
+	}
+
+	// ListAllRecordsを使って全レコードを取得
+	params := &ListAllRecordsParams{
+		Project: project,
+		From:    baseTime.AddDate(0, 0, -1),
+		To:      baseTime.AddDate(0, 0, 2),
+		Tags:    nil,
+	}
+
+	var retrievedRecords []*model.Record
+	var seenIDs = make(map[string]bool)
+
+	for record, err := range store.ListAllRecords(context.Background(), params) {
+		if err != nil {
+			t.Fatalf("Error during iteration: %v", err)
+		}
+
+		// 重複チェック（カーソルが機能していない場合、同じレコードが繰り返される）
+		recordID := record.ID.String()
+		if seenIDs[recordID] {
+			t.Errorf("DUPLICATE DETECTED: Record ID %s appeared more than once. Cursor pagination is broken!", recordID)
+		}
+		seenIDs[recordID] = true
+
+		retrievedRecords = append(retrievedRecords, record)
+
+		// 安全のため、無限ループを防ぐ
+		if len(retrievedRecords) > expectedCount+100 {
+			t.Fatalf("Retrieved too many records (%d). Possible infinite loop due to broken cursor!", len(retrievedRecords))
+		}
+	}
+
+	// 期待されるレコード数が取得できたか確認
+	if len(retrievedRecords) != expectedCount {
+		t.Errorf("Expected %d records, got %d", expectedCount, len(retrievedRecords))
+	}
+
+	// 重複がないことを再確認
+	if len(seenIDs) != expectedCount {
+		t.Errorf("Expected %d unique record IDs, got %d. Duplicates detected!", expectedCount, len(seenIDs))
+	}
+
+	t.Logf("Successfully retrieved %d unique records across multiple pages", len(retrievedRecords))
 }
