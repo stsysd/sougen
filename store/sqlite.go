@@ -324,7 +324,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		// カーソルが指定されている場合、パラメータから直接取得
 		cursorID = *params.CursorID
 		cursorTimestamp = params.CursorTimestamp.Format(time.RFC3339)
-		cursorColumn = nil // NULL ではなく、有効な値として扱う
+		cursorColumn = 1 // 非NULL値を設定してSQLの "? IS NULL" をFALSEにする
 	} else {
 		// カーソルが指定されていない場合は NULL
 		cursorColumn = nil
@@ -688,7 +688,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 		// カーソルが指定されている場合、パラメータから直接取得
 		cursorName = *params.CursorName
 		cursorUpdatedAt = params.CursorUpdatedAt.Format(time.RFC3339)
-		cursorColumn = nil // NULL ではなく、有効な値として扱う
+		cursorColumn = 1 // 非NULL値を設定してSQLの "? IS NULL" をFALSEにする
 	} else {
 		// カーソルが指定されていない場合は NULL
 		cursorColumn = nil
