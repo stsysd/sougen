@@ -319,7 +319,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	// カーソルベースのページネーションパラメータ
 	var cursorID string
 	var cursorTimestamp string
-	var cursorColumn interface{}
+	var cursorColumn any
 	if params.CursorTimestamp != nil && params.CursorID != nil {
 		// カーソルが指定されている場合、パラメータから直接取得
 		cursorID = *params.CursorID
@@ -688,7 +688,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 	// カーソルベースのページネーションパラメータ
 	var cursorName string
 	var cursorUpdatedAt string
-	var cursorColumn interface{}
+	var cursorColumn any
 	if params.CursorUpdatedAt != nil && params.CursorName != nil {
 		// カーソルが指定されている場合、パラメータから直接取得
 		cursorName = *params.CursorName
