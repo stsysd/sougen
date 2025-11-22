@@ -703,6 +703,11 @@ func TestCreateProject(t *testing.T) {
 		t.Fatalf("Failed to create project model: %v", err)
 	}
 
+	// IDが自動生成されていることを確認
+	if project.ID == uuid.Nil {
+		t.Fatal("Expected non-nil UUID for project ID")
+	}
+
 	// データベースに保存
 	err = store.CreateProject(context.Background(), project)
 	if err != nil {
@@ -716,6 +721,9 @@ func TestCreateProject(t *testing.T) {
 	}
 
 	// 内容の確認
+	if retrievedProject.ID != project.ID {
+		t.Errorf("Expected ID %s, got %s", project.ID, retrievedProject.ID)
+	}
 	if retrievedProject.Name != project.Name {
 		t.Errorf("Expected name %s, got %s", project.Name, retrievedProject.Name)
 	}
@@ -1453,12 +1461,12 @@ func TestListProjectsWithCursorPagination(t *testing.T) {
 		// 3番目のプロジェクト（allProjects[2]）の後から取得
 		cursorProject := allProjects[2]
 		cursorUpdatedAt := cursorProject.UpdatedAt
-		cursorName := cursorProject.Name
+		cursorID := cursorProject.ID.String()
 
 		params := &ListProjectsParams{
 			Pagination:      model.NewPaginationWithValues(3, nil),
 			CursorUpdatedAt: &cursorUpdatedAt,
-			CursorName:      &cursorName,
+			CursorID:        &cursorID,
 		}
 
 		projects, err := store.ListProjects(context.Background(), params)
@@ -1473,14 +1481,14 @@ func TestListProjectsWithCursorPagination(t *testing.T) {
 		// 2ページ目は1ページ目と異なるプロジェクトであるべき
 		for i := 0; i < 3; i++ {
 			expectedIndex := i + 3
-			if projects[i].Name != allProjects[expectedIndex].Name {
-				t.Errorf("Project at index %d on second page has incorrect name. Expected %s (from allProjects[%d]), got %s",
-					i, allProjects[expectedIndex].Name, expectedIndex, projects[i].Name)
+			if projects[i].ID != allProjects[expectedIndex].ID {
+				t.Errorf("Project at index %d on second page has incorrect ID. Expected %s (from allProjects[%d]), got %s",
+					i, allProjects[expectedIndex].ID, expectedIndex, projects[i].ID)
 			}
 		}
 
 		// バグがある場合: 1ページ目と同じプロジェクトが返される
-		if len(projects) > 0 && projects[0].Name == allProjects[0].Name {
+		if len(projects) > 0 && projects[0].ID == allProjects[0].ID {
 			t.Error("BUG DETECTED: Second page returned same projects as first page. Cursor is not working!")
 		}
 	})

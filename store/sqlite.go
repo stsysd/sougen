@@ -118,32 +118,37 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 }
 
 // initTables はデータベーステーブルを初期化します。
+// Note: スキーマ定義は db/migrations/00001_initial_schema.sql と同期させること
 func initTables(conn *sql.DB) error {
 	// テーブルの作成（外部キー制約なし）
 	_, err := conn.Exec(`
+		-- Projects table
 		CREATE TABLE IF NOT EXISTS projects (
 			name TEXT PRIMARY KEY,
 			description TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
-		
+
+		-- Records table
 		CREATE TABLE IF NOT EXISTS records (
 			id TEXT PRIMARY KEY,
 			project TEXT NOT NULL,
 			value INTEGER NOT NULL,
 			timestamp TEXT NOT NULL
 		);
-		
+
+		-- Tags table
 		CREATE TABLE IF NOT EXISTS tags (
 			record_id TEXT NOT NULL,
 			tag TEXT NOT NULL,
 			PRIMARY KEY (record_id, tag)
 		);
-		
-		CREATE INDEX IF NOT EXISTS idx_records_project_timestamp 
+
+		-- Indexes
+		CREATE INDEX IF NOT EXISTS idx_records_project_timestamp
 		ON records(project, timestamp);
-		
+
 		CREATE INDEX IF NOT EXISTS idx_tags_record_id ON tags(record_id);
 		CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
 		CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);

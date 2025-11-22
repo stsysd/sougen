@@ -10,6 +10,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -1917,6 +1918,9 @@ func TestCreateProjectEndpoint(t *testing.T) {
 	}
 
 	// 作成されたプロジェクトの内容をチェック
+	if createdProject.ID == uuid.Nil {
+		t.Error("Expected non-nil UUID for project ID in response")
+	}
 	if createdProject.Name != "test-project" {
 		t.Errorf("Expected name 'test-project', got %s", createdProject.Name)
 	}
@@ -2303,6 +2307,29 @@ func TestListProjectsWithPagination(t *testing.T) {
 
 		if firstResponse.Next == nil {
 			t.Fatal("Expected next page URL in first response")
+		}
+
+		// カーソルにIDが含まれていることを確認
+		parsedURL, err := url.Parse(*firstResponse.Next)
+		if err != nil {
+			t.Fatalf("Failed to parse next URL: %v", err)
+		}
+		cursorStr := parsedURL.Query().Get("cursor")
+		if cursorStr == "" {
+			t.Fatal("Expected cursor parameter in next URL")
+		}
+
+		// カーソルをデコードしてIDが含まれることを確認
+		cursor, err := model.DecodeProjectCursor(cursorStr)
+		if err != nil {
+			t.Fatalf("Failed to decode cursor: %v", err)
+		}
+		if cursor.ID == "" {
+			t.Error("Expected cursor to contain ID field")
+		}
+		// UUIDとして有効か確認
+		if _, err := uuid.Parse(cursor.ID); err != nil {
+			t.Errorf("Expected cursor ID to be valid UUID, got: %s", cursor.ID)
 		}
 
 		// 次ページを取得
