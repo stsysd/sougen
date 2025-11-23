@@ -5,6 +5,7 @@
 package db
 
 type Project struct {
+	ID          int64  `db:"id" json:"id"`
 	Name        string `db:"name" json:"name"`
 	Description string `db:"description" json:"description"`
 	CreatedAt   string `db:"created_at" json:"created_at"`
@@ -12,13 +13,21 @@ type Project struct {
 }
 
 type Record struct {
-	ID        string `db:"id" json:"id"`
-	Project   string `db:"project" json:"project"`
+	ID        int64  `db:"id" json:"id"`
+	ProjectID int64  `db:"project_id" json:"project_id"`
+	Value     int64  `db:"value" json:"value"`
+	Timestamp string `db:"timestamp" json:"timestamp"`
+}
+
+type RecordsNew struct {
+	ID        int64  `db:"id" json:"id"`
+	OldID     string `db:"old_id" json:"old_id"`
+	ProjectID int64  `db:"project_id" json:"project_id"`
 	Value     int64  `db:"value" json:"value"`
 	Timestamp string `db:"timestamp" json:"timestamp"`
 }
 
 type Tag struct {
-	RecordID string `db:"record_id" json:"record_id"`
+	RecordID int64  `db:"record_id" json:"record_id"`
 	Tag      string `db:"tag" json:"tag"`
 }

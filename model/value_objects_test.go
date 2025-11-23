@@ -1,8 +1,28 @@
 package model
 
 import (
+	"encoding/base64"
 	"testing"
+	"time"
 )
+
+// Test helper functions and constants
+var (
+	testZeroTime time.Time
+	testHour     = time.Hour
+)
+
+func testTime() time.Time {
+	return time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+}
+
+func testParseTime(s string) (time.Time, error) {
+	return time.Parse(time.RFC3339, s)
+}
+
+func testEncodeBase64(s string) string {
+	return base64.URLEncoding.EncodeToString([]byte(s))
+}
 
 // TestNewPagination tests the NewPagination function
 func TestNewPagination(t *testing.T) {
@@ -127,5 +147,85 @@ func TestNewPaginationWithValues(t *testing.T) {
 	paginationNilCursor := NewPaginationWithValues(100, nil)
 	if paginationNilCursor.Cursor() != nil {
 		t.Errorf("Expected nil cursor, got %v", paginationNilCursor.Cursor())
+	}
+}
+
+// TestEncodeDecodeProjectCursor tests ProjectCursor encoding and decoding
+func TestEncodeDecodeProjectCursor(t *testing.T) {
+	updatedAt := testTime()
+	name := "test-project"
+
+	// Encode cursor
+	encoded := EncodeProjectCursor(updatedAt, name)
+	if encoded == "" {
+		t.Error("Expected non-empty encoded cursor")
+	}
+
+	// Decode cursor
+	decoded, err := DecodeProjectCursor(encoded)
+	if err != nil {
+		t.Fatalf("Failed to decode cursor: %v", err)
+	}
+
+	// Verify updatedAt
+	decodedUpdatedAt, err := testParseTime(decoded.UpdatedAt)
+	if err != nil {
+		t.Fatalf("Failed to parse decoded updatedAt: %v", err)
+	}
+	if !decodedUpdatedAt.Equal(updatedAt) {
+		t.Errorf("Expected updatedAt %v, got %v", updatedAt, decodedUpdatedAt)
+	}
+
+	// Verify Name
+	if decoded.Name != name {
+		t.Errorf("Expected Name %s, got %s", name, decoded.Name)
+	}
+}
+
+// TestDecodeInvalidProjectCursor tests decoding invalid project cursors
+func TestDecodeInvalidProjectCursor(t *testing.T) {
+	tests := []struct {
+		name        string
+		encoded     string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "Empty string",
+			encoded:     "",
+			expectError: false, // Empty string returns nil, not error
+			description: "空文字列の場合はnilを返すこと",
+		},
+		{
+			name:        "Invalid base64",
+			encoded:     "not-valid-base64!@#",
+			expectError: true,
+			description: "不正なbase64文字列の場合はエラーになること",
+		},
+		{
+			name:        "Invalid JSON",
+			encoded:     testEncodeBase64("not valid json"),
+			expectError: true,
+			description: "不正なJSON文字列の場合はエラーになること",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoded, err := DecodeProjectCursor(tt.encoded)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("%s: expected error but got nil", tt.description)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("%s: unexpected error: %v", tt.description, err)
+				}
+				if tt.encoded == "" && decoded != nil {
+					t.Errorf("%s: expected nil for empty string, got %v", tt.description, decoded)
+				}
+			}
+		})
 	}
 }

@@ -10,19 +10,18 @@ import (
 )
 
 type Querier interface {
-	CreateProject(ctx context.Context, arg CreateProjectParams) error
-	CreateRecord(ctx context.Context, arg CreateRecordParams) error
+	CreateProject(ctx context.Context, arg CreateProjectParams) (sql.Result, error)
+	CreateRecord(ctx context.Context, arg CreateRecordParams) (sql.Result, error)
 	CreateRecordTag(ctx context.Context, arg CreateRecordTagParams) error
-	DeleteProject(ctx context.Context, project string) error
-	DeleteProjectEntity(ctx context.Context, name string) error
-	DeleteRecord(ctx context.Context, id string) (sql.Result, error)
-	DeleteRecordTags(ctx context.Context, recordID string) error
+	DeleteProject(ctx context.Context, id int64) error
+	DeleteRecord(ctx context.Context, id int64) (sql.Result, error)
+	DeleteRecordTags(ctx context.Context, recordID int64) error
 	DeleteRecordsUntil(ctx context.Context, timestamp string) (sql.Result, error)
 	DeleteRecordsUntilByProject(ctx context.Context, arg DeleteRecordsUntilByProjectParams) (sql.Result, error)
-	GetProject(ctx context.Context, name string) (Project, error)
-	GetProjectTags(ctx context.Context, project string) ([]string, error)
-	GetRecord(ctx context.Context, id string) (Record, error)
-	GetRecordTags(ctx context.Context, recordID string) ([]string, error)
+	GetProject(ctx context.Context, id int64) (Project, error)
+	GetProjectTags(ctx context.Context, projectID int64) ([]string, error)
+	GetRecord(ctx context.Context, id int64) (Record, error)
+	GetRecordTags(ctx context.Context, recordID int64) ([]string, error)
 	// Cursor-based pagination: uses cursor_updated_at and cursor_name for pagination
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	// Note: BETWEEN clause must come first due to sqlc bug with SQLite parameter handling

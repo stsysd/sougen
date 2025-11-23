@@ -1,13 +1,13 @@
--- name: CreateRecord :exec
-INSERT INTO records (id, project, value, timestamp)
-VALUES (?, ?, ?, ?);
+-- name: CreateRecord :execresult
+INSERT INTO records (project_id, value, timestamp)
+VALUES (?, ?, ?);
 
 -- name: CreateRecordTag :exec
 INSERT INTO tags (record_id, tag)
 VALUES (?, ?);
 
 -- name: GetRecord :one
-SELECT id, project, value, timestamp
+SELECT id, project_id, value, timestamp
 FROM records
 WHERE id = ?;
 
@@ -25,15 +25,15 @@ DELETE FROM records WHERE id = ?;
 -- Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 SELECT
     r.id,
-    r.project,
+    r.project_id,
     r.value,
     r.timestamp,
     COALESCE(GROUP_CONCAT(t.tag, ' '), '') as tags
 FROM records r
 LEFT JOIN tags t ON r.id = t.record_id
-WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
   AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
-GROUP BY r.id, r.project, r.value, r.timestamp
+GROUP BY r.id, r.project_id, r.value, r.timestamp
 ORDER BY r.timestamp DESC, r.id
 LIMIT ?;
 
@@ -44,56 +44,53 @@ LIMIT ?;
 -- Cursor-based pagination: uses cursor_timestamp and cursor_id for pagination
 SELECT
     r.id,
-    r.project,
+    r.project_id,
     r.value,
     r.timestamp,
     COALESCE(GROUP_CONCAT(t.tag, ' '), '') as all_tags
 FROM records r
 INNER JOIN tags t ON r.id = t.record_id
-WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
   AND t.tag IN (sqlc.slice(tags))
   AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
-GROUP BY r.id, r.project, r.value, r.timestamp
+GROUP BY r.id, r.project_id, r.value, r.timestamp
 HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
 ORDER BY r.timestamp DESC, r.id
 LIMIT ?;
 
 
--- name: DeleteProject :exec
-DELETE FROM records WHERE project = ?;
-
 -- name: DeleteRecordsUntil :execresult
 DELETE FROM records WHERE timestamp < ?;
 
 -- name: UpdateRecord :execresult
-UPDATE records SET project = ?, value = ?, timestamp = ?
+UPDATE records SET project_id = ?, value = ?, timestamp = ?
 WHERE id = ?;
 
 -- name: DeleteRecordTags :exec
 DELETE FROM tags WHERE record_id = ?;
 
 -- name: DeleteRecordsUntilByProject :execresult
-DELETE FROM records WHERE project = ? AND timestamp < ?;
+DELETE FROM records WHERE project_id = ? AND timestamp < ?;
 
--- name: CreateProject :exec
+-- name: CreateProject :execresult
 INSERT INTO projects (name, description, created_at, updated_at)
 VALUES (?, ?, ?, ?);
 
 -- name: GetProject :one
-SELECT name, description, created_at, updated_at
+SELECT id, name, description, created_at, updated_at
 FROM projects
-WHERE name = ?;
+WHERE id = ?;
 
 -- name: UpdateProject :execresult
 UPDATE projects SET description = ?, updated_at = ?
-WHERE name = ?;
+WHERE id = ?;
 
--- name: DeleteProjectEntity :exec
-DELETE FROM projects WHERE name = ?;
+-- name: DeleteProject :exec
+DELETE FROM projects WHERE id = ?;
 
 -- name: ListProjects :many
 -- Cursor-based pagination: uses cursor_updated_at and cursor_name for pagination
-SELECT name, description, created_at, updated_at
+SELECT id, name, description, created_at, updated_at
 FROM projects
 WHERE ? IS NULL OR updated_at < ? OR (updated_at = ? AND name > ?)
 ORDER BY updated_at DESC, name
@@ -103,5 +100,5 @@ LIMIT ?;
 SELECT DISTINCT tag
 FROM tags t
 JOIN records r ON t.record_id = r.id
-WHERE r.project = ?
+WHERE r.project_id = ?
 ORDER BY tag;

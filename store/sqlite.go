@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stsysd/sougen/db"
 	"github.com/stsysd/sougen/model"
@@ -27,60 +26,58 @@ type ListProjectsParams struct {
 
 // ListRecordsParams はレコード一覧取得のパラメータです。
 type ListRecordsParams struct {
-	Project         string
+	ProjectID       int64
 	From            time.Time
 	To              time.Time
 	Pagination      *model.Pagination
 	Tags            []string
 	CursorTimestamp *time.Time // Cursor position: timestamp (nil if no cursor)
-	CursorID        *string    // Cursor position: ID (nil if no cursor)
+	CursorID        *int64     // Cursor position: ID (nil if no cursor)
 }
 
 // ListAllRecordsParams は全レコード取得のパラメータです（ページネーションなし）。
 type ListAllRecordsParams struct {
-	Project string
-	From    time.Time
-	To      time.Time
-	Tags    []string
+	ProjectID int64
+	From      time.Time
+	To        time.Time
+	Tags      []string
 }
 
-// RecordStore はレコードの保存と取得を行うインターフェースです。
-type RecordStore interface {
+// Store はレコードとプロジェクトの永続化を行うインターフェースです。
+type Store interface {
+	// Record operations
 	// CreateRecord は新しいレコードを作成します。
 	CreateRecord(ctx context.Context, record *model.Record) error
 	// GetRecord は指定されたIDのレコードを取得します。
-	GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error)
+	GetRecord(ctx context.Context, id int64) (*model.Record, error)
 	// UpdateRecord は指定されたIDのレコードを更新します。
 	UpdateRecord(ctx context.Context, record *model.Record) error
 	// DeleteRecord は指定されたIDのレコードを削除します。
-	DeleteRecord(ctx context.Context, id uuid.UUID) error
-	// DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
-	DeleteProject(ctx context.Context, projectName string) error
+	DeleteRecord(ctx context.Context, id int64) error
 	// DeleteRecordsUntil は指定日時より前のレコードを削除します。
-	DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error)
+	DeleteRecordsUntil(ctx context.Context, projectID int64, until time.Time) (int, error)
 	// ListRecords は指定されたパラメータに基づいてレコードを取得します。
 	ListRecords(ctx context.Context, params *ListRecordsParams) ([]*model.Record, error)
 	// ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します（ページネーションなし）。
 	// イテレータはレコードとエラーのペアを返します。エラーが発生した場合、エラーが返され処理が終了します。
 	ListAllRecords(ctx context.Context, params *ListAllRecordsParams) iter.Seq2[*model.Record, error]
-	// Close はストアの接続を閉じます。
-	Close() error
-}
 
-// ProjectStore はプロジェクトの保存と取得を行うインターフェースです。
-type ProjectStore interface {
+	// Project operations
 	// CreateProject は新しいプロジェクトを作成します。
 	CreateProject(ctx context.Context, project *model.Project) error
-	// GetProject は指定された名前のプロジェクトを取得します。
-	GetProject(ctx context.Context, name string) (*model.Project, error)
+	// GetProject は指定されたIDのプロジェクトを取得します。
+	GetProject(ctx context.Context, id int64) (*model.Project, error)
 	// UpdateProject は指定されたプロジェクトを更新します。
 	UpdateProject(ctx context.Context, project *model.Project) error
-	// DeleteProjectEntity はプロジェクトエンティティのみを削除します（レコードは削除しません）。
-	DeleteProjectEntity(ctx context.Context, name string) error
+	// DeleteProject は指定されたプロジェクトIDのすべてのレコードとプロジェクトを削除します。
+	DeleteProject(ctx context.Context, projectID int64) error
 	// ListProjects は指定されたパラメータに基づいてプロジェクトを取得します。
 	ListProjects(ctx context.Context, params *ListProjectsParams) ([]*model.Project, error)
-	// GetProjectTags は指定されたプロジェクトのタグ一覧を取得します。
-	GetProjectTags(ctx context.Context, projectName string) ([]string, error)
+	// GetProjectTags は指定されたプロジェクトIDのタグ一覧を取得します。
+	GetProjectTags(ctx context.Context, projectID int64) ([]string, error)
+
+	// Close はストアの接続を閉じます。
+	Close() error
 }
 
 // SQLiteStore はSQLiteを使用したRecordStoreの実装です。
@@ -118,35 +115,51 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 }
 
 // initTables はデータベーステーブルを初期化します。
+// Note: スキーマ定義はgooseマイグレーションに移行しました。
+// この関数は既存のDBとの互換性のために残していますが、新規DBの場合はgooseを使用してください。
 func initTables(conn *sql.DB) error {
-	// テーブルの作成（外部キー制約なし）
-	_, err := conn.Exec(`
+	// 外部キー制約を有効化
+	_, err := conn.Exec(`PRAGMA foreign_keys = ON;`)
+	if err != nil {
+		return err
+	}
+
+	// テーブルの作成
+	_, err = conn.Exec(`
+		-- Projects table
 		CREATE TABLE IF NOT EXISTS projects (
-			name TEXT PRIMARY KEY,
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
 			description TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
-		
+
+		-- Records table
 		CREATE TABLE IF NOT EXISTS records (
-			id TEXT PRIMARY KEY,
-			project TEXT NOT NULL,
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id INTEGER NOT NULL,
 			value INTEGER NOT NULL,
-			timestamp TEXT NOT NULL
+			timestamp TEXT NOT NULL,
+			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 		);
-		
+
+		-- Tags table
 		CREATE TABLE IF NOT EXISTS tags (
-			record_id TEXT NOT NULL,
+			record_id INTEGER NOT NULL,
 			tag TEXT NOT NULL,
-			PRIMARY KEY (record_id, tag)
+			PRIMARY KEY (record_id, tag),
+			FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
 		);
-		
-		CREATE INDEX IF NOT EXISTS idx_records_project_timestamp 
-		ON records(project, timestamp);
-		
+
+		-- Indexes
+		CREATE INDEX IF NOT EXISTS idx_records_project_id_timestamp
+		ON records(project_id, timestamp);
+
 		CREATE INDEX IF NOT EXISTS idx_tags_record_id ON tags(record_id);
 		CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
 		CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
+		CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
 	`)
 	return err
 }
@@ -158,19 +171,12 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 		return err
 	}
 
-	// プロジェクトの存在確認（アプリケーションレベルでの整合性チェック）
-	_, err := s.GetProject(ctx, record.Project)
-	if err != nil {
-		return fmt.Errorf("project not found: %s", record.Project)
-	}
-
 	// 日時をRFC3339形式に統一して保存
 	formattedTime := record.Timestamp.Format(time.RFC3339)
 
-	// sqlcで生成されたクエリを使用
-	err = s.queries.CreateRecord(ctx, db.CreateRecordParams{
-		ID:        record.ID.String(),
-		Project:   record.Project,
+	// sqlcで生成されたクエリを使用（IDは自動生成）
+	ret, err := s.queries.CreateRecord(ctx, db.CreateRecordParams{
+		ProjectID: record.ProjectID,
 		Value:     int64(record.Value),
 		Timestamp: formattedTime,
 	})
@@ -178,10 +184,16 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 		return err
 	}
 
+	id, err := ret.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert ID: %w", err)
+	}
+	record.ID = id
+
 	// タグを個別に挿入
 	for _, tag := range record.Tags {
 		err = s.queries.CreateRecordTag(ctx, db.CreateRecordTagParams{
-			RecordID: record.ID.String(),
+			RecordID: id,
 			Tag:      tag,
 		})
 		if err != nil {
@@ -197,12 +209,6 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	// バリデーション
 	if err := record.Validate(); err != nil {
 		return err
-	}
-
-	// プロジェクトの存在確認（アプリケーションレベルでの整合性チェック）
-	_, err := s.GetProject(ctx, record.Project)
-	if err != nil {
-		return fmt.Errorf("project not found: %s", record.Project)
 	}
 
 	// トランザクションの開始
@@ -226,10 +232,10 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 
 	// レコードの基本情報を更新
 	result, err := queriesWithTx.UpdateRecord(ctx, db.UpdateRecordParams{
-		Project:   record.Project,
+		ProjectID: record.ProjectID,
 		Value:     int64(record.Value),
 		Timestamp: formattedTime,
-		ID:        record.ID.String(),
+		ID:        record.ID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update record: %w", err)
@@ -247,7 +253,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	}
 
 	// 既存のタグを削除
-	err = queriesWithTx.DeleteRecordTags(ctx, record.ID.String())
+	err = queriesWithTx.DeleteRecordTags(ctx, record.ID)
 	if err != nil {
 		return fmt.Errorf("failed to delete existing tags: %w", err)
 	}
@@ -255,7 +261,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	// 新しいタグを個別に挿入
 	for _, tag := range record.Tags {
 		err = queriesWithTx.CreateRecordTag(ctx, db.CreateRecordTagParams{
-			RecordID: record.ID.String(),
+			RecordID: record.ID,
 			Tag:      tag,
 		})
 		if err != nil {
@@ -273,9 +279,9 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 }
 
 // GetRecord は指定されたIDのレコードを取得します。
-func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error) {
+func (s *SQLiteStore) GetRecord(ctx context.Context, id int64) (*model.Record, error) {
 	// sqlcで生成されたクエリを使用
-	dbRecord, err := s.queries.GetRecord(ctx, id.String())
+	dbRecord, err := s.queries.GetRecord(ctx, id)
 	if err == sql.ErrNoRows {
 		return nil, errors.New("record not found")
 	}
@@ -289,12 +295,6 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 		return nil, fmt.Errorf("failed to parse record date: %w", err)
 	}
 
-	// UUIDの解析
-	recordID, err := uuid.Parse(dbRecord.ID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid UUID in database: %w", err)
-	}
-
 	// タグを取得
 	tags, err := s.queries.GetRecordTags(ctx, dbRecord.ID)
 	if err != nil {
@@ -302,7 +302,7 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Recor
 	}
 
 	// レコードの作成
-	return model.LoadRecord(recordID, timestamp, dbRecord.Project, int(dbRecord.Value), tags)
+	return model.LoadRecord(dbRecord.ID, timestamp, dbRecord.ProjectID, int(dbRecord.Value), tags)
 }
 
 // ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
@@ -317,7 +317,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	limit := int64(params.Pagination.Limit())
 
 	// カーソルベースのページネーションパラメータ
-	var cursorID string
+	var cursorID int64
 	var cursorTimestamp string
 	var cursorColumn any
 	if params.CursorTimestamp != nil && params.CursorID != nil {
@@ -329,7 +329,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		// カーソルが指定されていない場合は NULL
 		cursorColumn = nil
 		cursorTimestamp = ""
-		cursorID = ""
+		cursorID = 0
 	}
 
 	var records []*model.Record
@@ -339,7 +339,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
 			Timestamp:   fromStr,
 			Timestamp_2: toStr,
-			Project:     params.Project,
+			ProjectID:   params.ProjectID,
 			Column4:     cursorColumn,
 			Timestamp_3: cursorTimestamp,
 			Timestamp_4: cursorTimestamp,
@@ -356,17 +356,12 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 				return nil, fmt.Errorf("failed to parse record date: %w", err)
 			}
 
-			id, err := uuid.Parse(dbRecord.ID)
-			if err != nil {
-				return nil, fmt.Errorf("invalid UUID in database: %w", err)
-			}
-
 			var tags []string
 			if tagsStr, ok := dbRecord.Tags.(string); ok && tagsStr != "" {
 				tags = strings.Split(tagsStr, " ")
 			}
 
-			record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), tags)
+			record, err := model.LoadRecord(dbRecord.ID, timestamp, dbRecord.ProjectID, int(dbRecord.Value), tags)
 			if err != nil {
 				return nil, err
 			}
@@ -377,7 +372,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		dbRecords, err := s.queries.ListRecordsWithTags(ctx, db.ListRecordsWithTagsParams{
 			Timestamp:   fromStr,
 			Timestamp_2: toStr,
-			Project:     params.Project,
+			ProjectID:   params.ProjectID,
 			Tags:        params.Tags,
 			Column5:     cursorColumn,
 			Timestamp_3: cursorTimestamp,
@@ -396,24 +391,18 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 				return nil, fmt.Errorf("failed to parse record date: %w", err)
 			}
 
-			id, err := uuid.Parse(dbRecord.ID)
-			if err != nil {
-				return nil, fmt.Errorf("invalid UUID in database: %w", err)
-			}
-
 			var recordTags []string
 			if tagsStr, ok := dbRecord.AllTags.(string); ok && tagsStr != "" {
 				recordTags = strings.Split(tagsStr, " ")
 			}
 
-			record, err := model.LoadRecord(id, timestamp, dbRecord.Project, int(dbRecord.Value), recordTags)
+			record, err := model.LoadRecord(dbRecord.ID, timestamp, dbRecord.ProjectID, int(dbRecord.Value), recordTags)
 			if err != nil {
 				return nil, err
 			}
 			records = append(records, record)
 		}
 	}
-
 
 	return records, nil
 }
@@ -424,13 +413,13 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 	return func(yield func(*model.Record, error) bool) {
 		const pageSize = 1000
 		var cursorTimestamp *time.Time
-		var cursorID *string
+		var cursorID *int64
 
 		for {
 			pagination := model.NewPaginationWithValues(pageSize, nil)
 
 			listParams := &ListRecordsParams{
-				Project:         params.Project,
+				ProjectID:       params.ProjectID,
 				From:            params.From,
 				To:              params.To,
 				Pagination:      pagination,
@@ -462,8 +451,7 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 			// 次のページのためのカーソルを設定（新しいkeyset pagination形式）
 			lastRecord := records[len(records)-1]
 			cursorTimestamp = &lastRecord.Timestamp
-			lastRecordIDStr := lastRecord.ID.String()
-			cursorID = &lastRecordIDStr
+			cursorID = &lastRecord.ID
 		}
 	}
 }
@@ -474,9 +462,9 @@ func (s *SQLiteStore) Close() error {
 }
 
 // DeleteRecord は指定されたIDのレコードを削除します。
-func (s *SQLiteStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
+func (s *SQLiteStore) DeleteRecord(ctx context.Context, id int64) error {
 	// sqlcで生成されたクエリを使用
-	result, err := s.queries.DeleteRecord(ctx, id.String())
+	result, err := s.queries.DeleteRecord(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -495,8 +483,8 @@ func (s *SQLiteStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// DeleteProject は指定されたプロジェクトのすべてのレコードを削除します。
-func (s *SQLiteStore) DeleteProject(ctx context.Context, projectName string) error {
+// DeleteProject は指定されたプロジェクトを削除します。
+func (s *SQLiteStore) DeleteProject(ctx context.Context, projectID int64) error {
 	// トランザクションの開始
 	tx, err := s.conn.Begin()
 	if err != nil {
@@ -513,14 +501,8 @@ func (s *SQLiteStore) DeleteProject(ctx context.Context, projectName string) err
 	// sqlcで生成されたクエリを使用（トランザクション内で）
 	queriesWithTx := s.queries.WithTx(tx)
 
-	// レコードを削除
-	err = queriesWithTx.DeleteProject(ctx, projectName)
-	if err != nil {
-		return fmt.Errorf("failed to delete project records: %w", err)
-	}
-
-	// プロジェクトエンティティを削除
-	err = queriesWithTx.DeleteProjectEntity(ctx, projectName)
+	// プロジェクトを削除（ON DELETE CASCADEにより関連レコードも自動削除される）
+	err = queriesWithTx.DeleteProject(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("failed to delete project entity: %w", err)
 	}
@@ -535,7 +517,7 @@ func (s *SQLiteStore) DeleteProject(ctx context.Context, projectName string) err
 }
 
 // DeleteRecordsUntil は指定日時より前のレコードを削除します。
-func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error) {
+func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, projectID int64, until time.Time) (int, error) {
 	// トランザクションの開始
 	tx, err := s.conn.Begin()
 	if err != nil {
@@ -555,13 +537,13 @@ func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, project string, un
 	// sqlcで生成されたクエリを使用（トランザクション内で）
 	queriesWithTx := s.queries.WithTx(tx)
 	var result sql.Result
-	if project == "" {
+	if projectID == 0 {
 		// 特定のプロジェクト指定がない場合は全プロジェクトから削除
 		result, err = queriesWithTx.DeleteRecordsUntil(ctx, untilStr)
 	} else {
 		// 特定プロジェクトのレコードを削除
 		result, err = queriesWithTx.DeleteRecordsUntilByProject(ctx, db.DeleteRecordsUntilByProjectParams{
-			Project:   project,
+			ProjectID: projectID,
 			Timestamp: untilStr,
 		})
 	}
@@ -597,7 +579,7 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, project *model.Project)
 	updatedAtStr := project.UpdatedAt.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
-	err := s.queries.CreateProject(ctx, db.CreateProjectParams{
+	ret, err := s.queries.CreateProject(ctx, db.CreateProjectParams{
 		Name:        project.Name,
 		Description: project.Description,
 		CreatedAt:   createdAtStr,
@@ -606,14 +588,19 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, project *model.Project)
 	if err != nil {
 		return fmt.Errorf("failed to create project: %w", err)
 	}
+	id, err := ret.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert ID: %w", err)
+	}
 
+	project.ID = id
 	return nil
 }
 
-// GetProject は指定された名前のプロジェクトを取得します。
-func (s *SQLiteStore) GetProject(ctx context.Context, name string) (*model.Project, error) {
+// GetProject は指定されたIDのプロジェクトを取得します。
+func (s *SQLiteStore) GetProject(ctx context.Context, id int64) (*model.Project, error) {
 	// sqlcで生成されたクエリを使用
-	dbProject, err := s.queries.GetProject(ctx, name)
+	dbProject, err := s.queries.GetProject(ctx, id)
 	if err == sql.ErrNoRows {
 		return nil, errors.New("project not found")
 	}
@@ -633,7 +620,7 @@ func (s *SQLiteStore) GetProject(ctx context.Context, name string) (*model.Proje
 	}
 
 	// プロジェクトの作成
-	return model.LoadProject(dbProject.Name, dbProject.Description, createdAt, updatedAt)
+	return model.LoadProject(dbProject.ID, dbProject.Name, dbProject.Description, createdAt, updatedAt)
 }
 
 // UpdateProject は指定されたプロジェクトを更新します。
@@ -650,7 +637,7 @@ func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project)
 	result, err := s.queries.UpdateProject(ctx, db.UpdateProjectParams{
 		Description: project.Description,
 		UpdatedAt:   updatedAtStr,
-		Name:        project.Name,
+		ID:          project.ID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update project: %w", err)
@@ -665,17 +652,6 @@ func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project)
 	// プロジェクトが見つからない場合
 	if rowsAffected == 0 {
 		return errors.New("project not found")
-	}
-
-	return nil
-}
-
-// DeleteProjectEntity はプロジェクトエンティティのみを削除します（レコードは削除しません）。
-func (s *SQLiteStore) DeleteProjectEntity(ctx context.Context, name string) error {
-	// sqlcで生成されたクエリを使用
-	err := s.queries.DeleteProjectEntity(ctx, name)
-	if err != nil {
-		return fmt.Errorf("failed to delete project entity: %w", err)
 	}
 
 	return nil
@@ -728,7 +704,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 		}
 
 		// プロジェクトの作成
-		project, err := model.LoadProject(dbProject.Name, dbProject.Description, createdAt, updatedAt)
+		project, err := model.LoadProject(dbProject.ID, dbProject.Name, dbProject.Description, createdAt, updatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load project: %w", err)
 		}
@@ -738,16 +714,10 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 	return projects, nil
 }
 
-// GetProjectTags は指定されたプロジェクトのタグ一覧を取得します。
-func (s *SQLiteStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
-	// プロジェクトの存在確認
-	_, err := s.GetProject(ctx, projectName)
-	if err != nil {
-		return nil, err
-	}
-
+// GetProjectTags は指定されたプロジェクトIDのタグ一覧を取得します。
+func (s *SQLiteStore) GetProjectTags(ctx context.Context, projectID int64) ([]string, error) {
 	// sqlcで生成されたクエリを使用
-	tags, err := s.queries.GetProjectTags(ctx, projectName)
+	tags, err := s.queries.GetProjectTags(ctx, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project tags: %w", err)
 	}
