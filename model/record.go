@@ -5,27 +5,26 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Record は日々のアクティビティデータを表すモデルです。
 type Record struct {
-	ID        uuid.UUID `json:"id"`
-	Project   string    `json:"project"`   // アクティビティのカテゴリー
-	Value     int       `json:"value"`     // 記録値
-	Timestamp time.Time `json:"timestamp"` // アクティビティの日時
-	Tags      []string  `json:"tags"`      // タグ一覧
+	ID        int64     `json:"id"`
+	ProjectID int64     `json:"project_id"` // プロジェクトID
+	Value     int       `json:"value"`      // 記録値
+	Timestamp time.Time `json:"timestamp"`  // アクティビティの日時
+	Tags      []string  `json:"tags"`       // タグ一覧
 }
 
-// NewRecord はRecordの新しいインスタンスを作成し、UUIDと作成時間を設定します。
-func NewRecord(timestamp time.Time, project string, value int, tags []string) (*Record, error) {
+// NewRecord はRecordの新しいインスタンスを作成します。
+// IDはデータベース側で自動生成されるため、0を設定します。
+func NewRecord(timestamp time.Time, projectID int64, value int, tags []string) (*Record, error) {
 	if tags == nil {
 		tags = []string{}
 	}
 	rec := &Record{
-		ID:        uuid.New(),
-		Project:   project,
+		ID:        -1, // DBのAUTOINCREMENTで自動生成
+		ProjectID: projectID,
 		Value:     value,
 		Timestamp: timestamp,
 		Tags:      tags,
@@ -36,14 +35,19 @@ func NewRecord(timestamp time.Time, project string, value int, tags []string) (*
 	return rec, nil
 }
 
-// LoadRecord はRecordの新しいインスタンスを作成し、UUIDと作成時間を設定します。
-func LoadRecord(id uuid.UUID, timestamp time.Time, project string, value int, tags []string) (*Record, error) {
+// LoadRecord は既存のRecordインスタンスを作成します。
+func LoadRecord(id int64, timestamp time.Time, projectID int64, value int, tags []string) (*Record, error) {
+	// LoadRecordはDBから読み込んだレコード用なので、IDは必須
+	if id <= 0 {
+		return nil, errors.New("id is required for loaded record")
+	}
+
 	if tags == nil {
 		tags = []string{}
 	}
 	rec := &Record{
 		ID:        id,
-		Project:   project,
+		ProjectID: projectID,
 		Value:     value,
 		Timestamp: timestamp,
 		Tags:      tags,
@@ -57,19 +61,14 @@ func LoadRecord(id uuid.UUID, timestamp time.Time, project string, value int, ta
 
 // Validate はレコードのデータバリデーションを行います。
 func (r *Record) Validate() error {
-	// IDの検証
-	if r.ID == uuid.Nil {
-		return errors.New("id is required")
-	}
-
 	// 日時の検証
 	if r.Timestamp.IsZero() {
 		return errors.New("timestamp is required")
 	}
 
-	// カテゴリーの検証
-	if r.Project == "" {
-		return errors.New("project is required")
+	// プロジェクトIDの検証
+	if r.ProjectID <= 0 {
+		return errors.New("project_id is required")
 	}
 
 	// タグの検証

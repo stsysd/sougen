@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const createProject = `-- name: CreateProject :exec
+const createProject = `-- name: CreateProject :execresult
 INSERT INTO projects (name, description, created_at, updated_at)
 VALUES (?, ?, ?, ?)
 `
@@ -23,36 +23,28 @@ type CreateProjectParams struct {
 	UpdatedAt   string `db:"updated_at" json:"updated_at"`
 }
 
-func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
-	_, err := q.db.ExecContext(ctx, createProject,
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createProject,
 		arg.Name,
 		arg.Description,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	return err
 }
 
-const createRecord = `-- name: CreateRecord :exec
-INSERT INTO records (id, project, value, timestamp)
-VALUES (?, ?, ?, ?)
+const createRecord = `-- name: CreateRecord :execresult
+INSERT INTO records (project_id, value, timestamp)
+VALUES (?, ?, ?)
 `
 
 type CreateRecordParams struct {
-	ID        string `db:"id" json:"id"`
-	Project   string `db:"project" json:"project"`
+	ProjectID int64  `db:"project_id" json:"project_id"`
 	Value     int64  `db:"value" json:"value"`
 	Timestamp string `db:"timestamp" json:"timestamp"`
 }
 
-func (q *Queries) CreateRecord(ctx context.Context, arg CreateRecordParams) error {
-	_, err := q.db.ExecContext(ctx, createRecord,
-		arg.ID,
-		arg.Project,
-		arg.Value,
-		arg.Timestamp,
-	)
-	return err
+func (q *Queries) CreateRecord(ctx context.Context, arg CreateRecordParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createRecord, arg.ProjectID, arg.Value, arg.Timestamp)
 }
 
 const createRecordTag = `-- name: CreateRecordTag :exec
@@ -61,7 +53,7 @@ VALUES (?, ?)
 `
 
 type CreateRecordTagParams struct {
-	RecordID string `db:"record_id" json:"record_id"`
+	RecordID int64  `db:"record_id" json:"record_id"`
 	Tag      string `db:"tag" json:"tag"`
 }
 
@@ -71,20 +63,11 @@ func (q *Queries) CreateRecordTag(ctx context.Context, arg CreateRecordTagParams
 }
 
 const deleteProject = `-- name: DeleteProject :exec
-DELETE FROM records WHERE project = ?
+DELETE FROM projects WHERE id = ?
 `
 
-func (q *Queries) DeleteProject(ctx context.Context, project string) error {
-	_, err := q.db.ExecContext(ctx, deleteProject, project)
-	return err
-}
-
-const deleteProjectEntity = `-- name: DeleteProjectEntity :exec
-DELETE FROM projects WHERE name = ?
-`
-
-func (q *Queries) DeleteProjectEntity(ctx context.Context, name string) error {
-	_, err := q.db.ExecContext(ctx, deleteProjectEntity, name)
+func (q *Queries) DeleteProject(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteProject, id)
 	return err
 }
 
@@ -92,7 +75,7 @@ const deleteRecord = `-- name: DeleteRecord :execresult
 DELETE FROM records WHERE id = ?
 `
 
-func (q *Queries) DeleteRecord(ctx context.Context, id string) (sql.Result, error) {
+func (q *Queries) DeleteRecord(ctx context.Context, id int64) (sql.Result, error) {
 	return q.db.ExecContext(ctx, deleteRecord, id)
 }
 
@@ -100,7 +83,7 @@ const deleteRecordTags = `-- name: DeleteRecordTags :exec
 DELETE FROM tags WHERE record_id = ?
 `
 
-func (q *Queries) DeleteRecordTags(ctx context.Context, recordID string) error {
+func (q *Queries) DeleteRecordTags(ctx context.Context, recordID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteRecordTags, recordID)
 	return err
 }
@@ -114,28 +97,29 @@ func (q *Queries) DeleteRecordsUntil(ctx context.Context, timestamp string) (sql
 }
 
 const deleteRecordsUntilByProject = `-- name: DeleteRecordsUntilByProject :execresult
-DELETE FROM records WHERE project = ? AND timestamp < ?
+DELETE FROM records WHERE project_id = ? AND timestamp < ?
 `
 
 type DeleteRecordsUntilByProjectParams struct {
-	Project   string `db:"project" json:"project"`
+	ProjectID int64  `db:"project_id" json:"project_id"`
 	Timestamp string `db:"timestamp" json:"timestamp"`
 }
 
 func (q *Queries) DeleteRecordsUntilByProject(ctx context.Context, arg DeleteRecordsUntilByProjectParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, deleteRecordsUntilByProject, arg.Project, arg.Timestamp)
+	return q.db.ExecContext(ctx, deleteRecordsUntilByProject, arg.ProjectID, arg.Timestamp)
 }
 
 const getProject = `-- name: GetProject :one
-SELECT name, description, created_at, updated_at
+SELECT id, name, description, created_at, updated_at
 FROM projects
-WHERE name = ?
+WHERE id = ?
 `
 
-func (q *Queries) GetProject(ctx context.Context, name string) (Project, error) {
-	row := q.db.QueryRowContext(ctx, getProject, name)
+func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
+	row := q.db.QueryRowContext(ctx, getProject, id)
 	var i Project
 	err := row.Scan(
+		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.CreatedAt,
@@ -148,12 +132,12 @@ const getProjectTags = `-- name: GetProjectTags :many
 SELECT DISTINCT tag
 FROM tags t
 JOIN records r ON t.record_id = r.id
-WHERE r.project = ?
+WHERE r.project_id = ?
 ORDER BY tag
 `
 
-func (q *Queries) GetProjectTags(ctx context.Context, project string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getProjectTags, project)
+func (q *Queries) GetProjectTags(ctx context.Context, projectID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getProjectTags, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -176,17 +160,17 @@ func (q *Queries) GetProjectTags(ctx context.Context, project string) ([]string,
 }
 
 const getRecord = `-- name: GetRecord :one
-SELECT id, project, value, timestamp
+SELECT id, project_id, value, timestamp
 FROM records
 WHERE id = ?
 `
 
-func (q *Queries) GetRecord(ctx context.Context, id string) (Record, error) {
+func (q *Queries) GetRecord(ctx context.Context, id int64) (Record, error) {
 	row := q.db.QueryRowContext(ctx, getRecord, id)
 	var i Record
 	err := row.Scan(
 		&i.ID,
-		&i.Project,
+		&i.ProjectID,
 		&i.Value,
 		&i.Timestamp,
 	)
@@ -199,7 +183,7 @@ FROM tags
 WHERE record_id = ?
 `
 
-func (q *Queries) GetRecordTags(ctx context.Context, recordID string) ([]string, error) {
+func (q *Queries) GetRecordTags(ctx context.Context, recordID int64) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, getRecordTags, recordID)
 	if err != nil {
 		return nil, err
@@ -223,7 +207,7 @@ func (q *Queries) GetRecordTags(ctx context.Context, recordID string) ([]string,
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT name, description, created_at, updated_at
+SELECT id, name, description, created_at, updated_at
 FROM projects
 WHERE ? IS NULL OR updated_at < ? OR (updated_at = ? AND name > ?)
 ORDER BY updated_at DESC, name
@@ -255,6 +239,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 	for rows.Next() {
 		var i Project
 		if err := rows.Scan(
+			&i.ID,
 			&i.Name,
 			&i.Description,
 			&i.CreatedAt,
@@ -276,15 +261,15 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 const listRecords = `-- name: ListRecords :many
 SELECT
     r.id,
-    r.project,
+    r.project_id,
     r.value,
     r.timestamp,
     COALESCE(GROUP_CONCAT(t.tag, ' '), '') as tags
 FROM records r
 LEFT JOIN tags t ON r.id = t.record_id
-WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
   AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
-GROUP BY r.id, r.project, r.value, r.timestamp
+GROUP BY r.id, r.project_id, r.value, r.timestamp
 ORDER BY r.timestamp DESC, r.id
 LIMIT ?
 `
@@ -292,17 +277,17 @@ LIMIT ?
 type ListRecordsParams struct {
 	Timestamp   string      `db:"timestamp" json:"timestamp"`
 	Timestamp_2 string      `db:"timestamp_2" json:"timestamp_2"`
-	Project     string      `db:"project" json:"project"`
+	ProjectID   int64       `db:"project_id" json:"project_id"`
 	Column4     interface{} `db:"column_4" json:"column_4"`
 	Timestamp_3 string      `db:"timestamp_3" json:"timestamp_3"`
 	Timestamp_4 string      `db:"timestamp_4" json:"timestamp_4"`
-	ID          string      `db:"id" json:"id"`
+	ID          int64       `db:"id" json:"id"`
 	Limit       int64       `db:"limit" json:"limit"`
 }
 
 type ListRecordsRow struct {
-	ID        string      `db:"id" json:"id"`
-	Project   string      `db:"project" json:"project"`
+	ID        int64       `db:"id" json:"id"`
+	ProjectID int64       `db:"project_id" json:"project_id"`
 	Value     int64       `db:"value" json:"value"`
 	Timestamp string      `db:"timestamp" json:"timestamp"`
 	Tags      interface{} `db:"tags" json:"tags"`
@@ -315,7 +300,7 @@ func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Lis
 	rows, err := q.db.QueryContext(ctx, listRecords,
 		arg.Timestamp,
 		arg.Timestamp_2,
-		arg.Project,
+		arg.ProjectID,
 		arg.Column4,
 		arg.Timestamp_3,
 		arg.Timestamp_4,
@@ -331,7 +316,7 @@ func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Lis
 		var i ListRecordsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Project,
+			&i.ProjectID,
 			&i.Value,
 			&i.Timestamp,
 			&i.Tags,
@@ -352,16 +337,16 @@ func (q *Queries) ListRecords(ctx context.Context, arg ListRecordsParams) ([]Lis
 const listRecordsWithTags = `-- name: ListRecordsWithTags :many
 SELECT
     r.id,
-    r.project,
+    r.project_id,
     r.value,
     r.timestamp,
     COALESCE(GROUP_CONCAT(t.tag, ' '), '') as all_tags
 FROM records r
 INNER JOIN tags t ON r.id = t.record_id
-WHERE r.timestamp BETWEEN ? AND ? AND r.project = ?
+WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
   AND t.tag IN (/*SLICE:tags*/?)
   AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
-GROUP BY r.id, r.project, r.value, r.timestamp
+GROUP BY r.id, r.project_id, r.value, r.timestamp
 HAVING COUNT(DISTINCT t.tag) = CAST(? AS INTEGER)
 ORDER BY r.timestamp DESC, r.id
 LIMIT ?
@@ -370,19 +355,19 @@ LIMIT ?
 type ListRecordsWithTagsParams struct {
 	Timestamp   string      `db:"timestamp" json:"timestamp"`
 	Timestamp_2 string      `db:"timestamp_2" json:"timestamp_2"`
-	Project     string      `db:"project" json:"project"`
+	ProjectID   int64       `db:"project_id" json:"project_id"`
 	Tags        []string    `db:"tags" json:"tags"`
 	Column5     interface{} `db:"column_5" json:"column_5"`
 	Timestamp_3 string      `db:"timestamp_3" json:"timestamp_3"`
 	Timestamp_4 string      `db:"timestamp_4" json:"timestamp_4"`
-	ID          string      `db:"id" json:"id"`
+	ID          int64       `db:"id" json:"id"`
 	Column9     int64       `db:"column_9" json:"column_9"`
 	Limit       int64       `db:"limit" json:"limit"`
 }
 
 type ListRecordsWithTagsRow struct {
-	ID        string      `db:"id" json:"id"`
-	Project   string      `db:"project" json:"project"`
+	ID        int64       `db:"id" json:"id"`
+	ProjectID int64       `db:"project_id" json:"project_id"`
 	Value     int64       `db:"value" json:"value"`
 	Timestamp string      `db:"timestamp" json:"timestamp"`
 	AllTags   interface{} `db:"all_tags" json:"all_tags"`
@@ -397,7 +382,7 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 	var queryParams []interface{}
 	queryParams = append(queryParams, arg.Timestamp)
 	queryParams = append(queryParams, arg.Timestamp_2)
-	queryParams = append(queryParams, arg.Project)
+	queryParams = append(queryParams, arg.ProjectID)
 	if len(arg.Tags) > 0 {
 		for _, v := range arg.Tags {
 			queryParams = append(queryParams, v)
@@ -422,7 +407,7 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 		var i ListRecordsWithTagsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Project,
+			&i.ProjectID,
 			&i.Value,
 			&i.Timestamp,
 			&i.AllTags,
@@ -442,34 +427,34 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 
 const updateProject = `-- name: UpdateProject :execresult
 UPDATE projects SET description = ?, updated_at = ?
-WHERE name = ?
+WHERE id = ?
 `
 
 type UpdateProjectParams struct {
 	Description string `db:"description" json:"description"`
 	UpdatedAt   string `db:"updated_at" json:"updated_at"`
-	Name        string `db:"name" json:"name"`
+	ID          int64  `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, updateProject, arg.Description, arg.UpdatedAt, arg.Name)
+	return q.db.ExecContext(ctx, updateProject, arg.Description, arg.UpdatedAt, arg.ID)
 }
 
 const updateRecord = `-- name: UpdateRecord :execresult
-UPDATE records SET project = ?, value = ?, timestamp = ?
+UPDATE records SET project_id = ?, value = ?, timestamp = ?
 WHERE id = ?
 `
 
 type UpdateRecordParams struct {
-	Project   string `db:"project" json:"project"`
+	ProjectID int64  `db:"project_id" json:"project_id"`
 	Value     int64  `db:"value" json:"value"`
 	Timestamp string `db:"timestamp" json:"timestamp"`
-	ID        string `db:"id" json:"id"`
+	ID        int64  `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateRecord(ctx context.Context, arg UpdateRecordParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, updateRecord,
-		arg.Project,
+		arg.ProjectID,
 		arg.Value,
 		arg.Timestamp,
 		arg.ID,

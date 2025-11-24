@@ -8,6 +8,7 @@ import (
 
 // Project はプロジェクトエンティティを表すモデルです。
 type Project struct {
+	ID          int64     `json:"id"`          // プロジェクトID
 	Name        string    `json:"name"`        // プロジェクト名
 	Description string    `json:"description"` // プロジェクトの説明
 	CreatedAt   time.Time `json:"created_at"`  // 作成日時
@@ -15,9 +16,11 @@ type Project struct {
 }
 
 // NewProject は新しいProjectインスタンスを作成します。
+// IDはデータベース側で自動生成されるため、0を設定します。
 func NewProject(name, description string) (*Project, error) {
 	now := time.Now()
 	p := &Project{
+		ID:          -1, // DBのAUTOINCREMENTで自動生成
 		Name:        name,
 		Description: description,
 		CreatedAt:   now,
@@ -30,8 +33,9 @@ func NewProject(name, description string) (*Project, error) {
 }
 
 // LoadProject は既存のProjectインスタンスを作成します。
-func LoadProject(name, description string, createdAt, updatedAt time.Time) (*Project, error) {
+func LoadProject(id int64, name, description string, createdAt, updatedAt time.Time) (*Project, error) {
 	p := &Project{
+		ID:          id,
 		Name:        name,
 		Description: description,
 		CreatedAt:   createdAt,

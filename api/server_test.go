@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stsysd/sougen/config"
 	"github.com/stsysd/sougen/model"
 	"github.com/stsysd/sougen/store"
@@ -35,59 +34,63 @@ func newTestConfig() *config.Config {
 }
 
 // モックストア: テスト用のRecordStoreの実装
-type MockRecordStore struct {
-	records map[string]*model.Record
+type MockStore struct {
+	records  map[int64]*model.Record
+	projects map[int64]*model.Project
 }
 
-func NewMockRecordStore() *MockRecordStore {
-	return &MockRecordStore{
-		records: make(map[string]*model.Record),
+func NewMockStore() *MockStore {
+	return &MockStore{
+		records:  make(map[int64]*model.Record),
+		projects: make(map[int64]*model.Project),
 	}
 }
 
-func (m *MockRecordStore) CreateRecord(ctx context.Context, record *model.Record) error {
+func (m *MockStore) CreateRecord(ctx context.Context, record *model.Record) error {
 	if err := record.Validate(); err != nil {
 		return err
 	}
-	m.records[record.ID.String()] = record
+	// IDを自動生成
+	record.ID = int64(len(m.records) + 1)
+	m.records[record.ID] = record
 	return nil
 }
 
-func (m *MockRecordStore) GetRecord(ctx context.Context, id uuid.UUID) (*model.Record, error) {
-	record, exists := m.records[id.String()]
+func (m *MockStore) GetRecord(ctx context.Context, id int64) (*model.Record, error) {
+	record, exists := m.records[id]
 	if !exists {
 		return nil, fmt.Errorf("record not found")
 	}
 	return record, nil
 }
 
-func (m *MockRecordStore) UpdateRecord(ctx context.Context, record *model.Record) error {
+func (m *MockStore) UpdateRecord(ctx context.Context, record *model.Record) error {
 	if err := record.Validate(); err != nil {
 		return err
 	}
-	_, exists := m.records[record.ID.String()]
+	_, exists := m.records[record.ID]
 	if !exists {
 		return fmt.Errorf("record not found")
 	}
-	m.records[record.ID.String()] = record
+	m.records[record.ID] = record
 	return nil
 }
 
-func (m *MockRecordStore) DeleteRecord(ctx context.Context, id uuid.UUID) error {
-	_, exists := m.records[id.String()]
+func (m *MockStore) DeleteRecord(ctx context.Context, id int64) error {
+	_, exists := m.records[id]
 	if !exists {
 		return fmt.Errorf("record not found")
 	}
-	delete(m.records, id.String())
+	delete(m.records, id)
 	return nil
 }
 
-func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRecordsParams) ([]*model.Record, error) {
+func (m *MockStore) ListRecords(ctx context.Context, params *store.ListRecordsParams) ([]*model.Record, error) {
 	var records []*model.Record
 
 	for _, r := range m.records {
 		// プロジェクトフィルタ
-		if r.Project != params.Project {
+		if r.ProjectID != params.ProjectID {
 			continue
 		}
 
@@ -129,7 +132,7 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	if params.CursorTimestamp != nil && params.CursorID != nil {
 		for i, r := range records {
 			// timestamp と ID の組み合わせで位置を特定
-			if r.Timestamp.Equal(*params.CursorTimestamp) && r.ID.String() == *params.CursorID {
+			if r.Timestamp.Equal(*params.CursorTimestamp) && r.ID == *params.CursorID {
 				startIndex = i + 1 // カーソルの次から開始
 				break
 			}
@@ -144,12 +147,12 @@ func (m *MockRecordStore) ListRecords(ctx context.Context, params *store.ListRec
 	return records[startIndex:endIndex], nil
 }
 
-func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.ListAllRecordsParams) iter.Seq2[*model.Record, error] {
+func (m *MockStore) ListAllRecords(ctx context.Context, params *store.ListAllRecordsParams) iter.Seq2[*model.Record, error] {
 	return func(yield func(*model.Record, error) bool) {
 		var records []*model.Record
 
 		for _, r := range m.records {
-			if r.Project != params.Project || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+			if r.ProjectID != params.ProjectID || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
 				continue
 			}
 
@@ -189,14 +192,14 @@ func (m *MockRecordStore) ListAllRecords(ctx context.Context, params *store.List
 	}
 }
 
-func (m *MockRecordStore) Close() error {
+func (m *MockStore) Close() error {
 	return nil
 }
 
-func (m *MockRecordStore) DeleteProject(ctx context.Context, projectName string) error {
+func (m *MockStore) DeleteProject(ctx context.Context, projectID int64) error {
 	// 指定されたプロジェクトのレコードをすべて削除
 	for id, record := range m.records {
-		if record.Project == projectName {
+		if record.ProjectID == projectID {
 			delete(m.records, id)
 		}
 	}
@@ -204,14 +207,14 @@ func (m *MockRecordStore) DeleteProject(ctx context.Context, projectName string)
 	return nil
 }
 
-func (m *MockRecordStore) DeleteRecordsUntil(ctx context.Context, project string, until time.Time) (int, error) {
+func (m *MockStore) DeleteRecordsUntil(ctx context.Context, projectID int64, until time.Time) (int, error) {
 	count := 0
 	// 条件に一致するレコードをIDリストに収集
-	var idsToDelete []string
+	var idsToDelete []int64
 
 	for id, record := range m.records {
 		// プロジェクト指定がない、または一致するプロジェクトかつ指定日時より前
-		if (project == "" || record.Project == project) && record.Timestamp.Before(until) {
+		if (projectID == 0 || record.ProjectID == projectID) && record.Timestamp.Before(until) {
 			idsToDelete = append(idsToDelete, id)
 		}
 	}
@@ -225,50 +228,38 @@ func (m *MockRecordStore) DeleteRecordsUntil(ctx context.Context, project string
 	return count, nil
 }
 
-// MockProjectStore は ProjectStore のモック実装です。
-type MockProjectStore struct {
-	projects map[string]*model.Project
-}
-
-func NewMockProjectStore() *MockProjectStore {
-	return &MockProjectStore{
-		projects: make(map[string]*model.Project),
-	}
-}
-
-func (m *MockProjectStore) CreateProject(ctx context.Context, project *model.Project) error {
-	if _, exists := m.projects[project.Name]; exists {
-		return errors.New("UNIQUE constraint failed")
-	}
-	m.projects[project.Name] = project
+func (m *MockStore) CreateProject(ctx context.Context, project *model.Project) error {
+	// IDを自動生成
+	project.ID = int64(len(m.projects) + 1)
+	m.projects[project.ID] = project
 	return nil
 }
 
-func (m *MockProjectStore) GetProject(ctx context.Context, name string) (*model.Project, error) {
-	project, exists := m.projects[name]
+func (m *MockStore) GetProject(ctx context.Context, id int64) (*model.Project, error) {
+	project, exists := m.projects[id]
 	if !exists {
 		return nil, errors.New("project not found")
 	}
 	return project, nil
 }
 
-func (m *MockProjectStore) UpdateProject(ctx context.Context, project *model.Project) error {
-	if _, exists := m.projects[project.Name]; !exists {
+func (m *MockStore) UpdateProject(ctx context.Context, project *model.Project) error {
+	if _, exists := m.projects[project.ID]; !exists {
 		return errors.New("project not found")
 	}
-	m.projects[project.Name] = project
+	m.projects[project.ID] = project
 	return nil
 }
 
-func (m *MockProjectStore) DeleteProjectEntity(ctx context.Context, name string) error {
-	if _, exists := m.projects[name]; !exists {
+func (m *MockStore) DeleteProjectEntity(ctx context.Context, id int64) error {
+	if _, exists := m.projects[id]; !exists {
 		return errors.New("project not found")
 	}
-	delete(m.projects, name)
+	delete(m.projects, id)
 	return nil
 }
 
-func (m *MockProjectStore) ListProjects(ctx context.Context, params *store.ListProjectsParams) ([]*model.Project, error) {
+func (m *MockStore) ListProjects(ctx context.Context, params *store.ListProjectsParams) ([]*model.Project, error) {
 	var projects []*model.Project
 	for _, project := range m.projects {
 		projects = append(projects, project)
@@ -304,41 +295,16 @@ func (m *MockProjectStore) ListProjects(ctx context.Context, params *store.ListP
 	return projects[startIndex:endIndex], nil
 }
 
-func (m *MockProjectStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
+func (m *MockStore) GetProjectTags(ctx context.Context, projectID int64) ([]string, error) {
 	// プロジェクトの存在確認
-	if _, exists := m.projects[projectName]; !exists {
-		return nil, errors.New("project not found")
-	}
-
-	// 実際のモックではCombinedStoreのRecordStoreからタグを取得する
-	// ここでは簡易的な実装とする
-	return []string{}, nil
-}
-
-// MockCombinedStore は RecordStore と ProjectStore の両方を実装します。
-type MockCombinedStore struct {
-	*MockRecordStore
-	*MockProjectStore
-}
-
-func NewMockCombinedStore() *MockCombinedStore {
-	return &MockCombinedStore{
-		MockRecordStore:  NewMockRecordStore(),
-		MockProjectStore: NewMockProjectStore(),
-	}
-}
-
-// GetProjectTags は CombinedStore 用の実装で、RecordStore からタグを取得します。
-func (m *MockCombinedStore) GetProjectTags(ctx context.Context, projectName string) ([]string, error) {
-	// プロジェクトの存在確認
-	if _, exists := m.MockProjectStore.projects[projectName]; !exists {
+	if _, exists := m.projects[projectID]; !exists {
 		return nil, errors.New("project not found")
 	}
 
 	// プロジェクトのレコードからユニークなタグを収集
 	tagSet := make(map[string]bool)
-	for _, record := range m.MockRecordStore.records {
-		if record.Project == projectName {
+	for _, record := range m.records {
+		if record.ProjectID == projectID {
 			for _, tag := range record.Tags {
 				tagSet[tag] = true
 			}
@@ -356,21 +322,24 @@ func (m *MockCombinedStore) GetProjectTags(ctx context.Context, projectName stri
 
 func TestCreateRecordEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "exercise"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// テストリクエストデータ
 	reqBody := map[string]any{
-		"timestamp": "2025-05-21T14:30:00Z",
-		"value":     1,
+		"project_id": projectID,
+		"timestamp":  "2025-05-21T14:30:00Z",
+		"value":      1,
 	}
 	reqBytes, _ := json.Marshal(reqBody)
 
 	// リクエストの作成 - 新しいURLパスを使用
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -383,6 +352,7 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	// レスポンスのステータスコードを確認
 	if w.Code != http.StatusCreated {
 		t.Errorf("Expected status code %d, got %d", http.StatusCreated, w.Code)
+		t.Logf("Response body: %s", w.Body.String())
 		return
 	}
 
@@ -404,8 +374,8 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	}
 
 	// プロジェクト名の確認
-	if responseRecord.Project != projectName {
-		t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
+	if responseRecord.ProjectID != projectID {
+		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
 	}
 
 	expectedValue := reqBody["value"]
@@ -421,21 +391,24 @@ func TestCreateRecordWithoutTimestamp(t *testing.T) {
 	// timestampフィールドが省略された場合に現在時刻が自動設定されることをテスト
 
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "exercise"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// timestampを省略したテストリクエストデータ
 	reqBody := map[string]any{
-		"value": 1,
+		"project_id": projectID,
+		"value":      1,
 		// timestampは意図的に省略
 	}
 	reqBytes, _ := json.Marshal(reqBody)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -473,8 +446,8 @@ func TestCreateRecordWithoutTimestamp(t *testing.T) {
 	t.Logf("自動設定されたTimestamp: %v", responseRecord.Timestamp)
 
 	// プロジェクト名の確認
-	if responseRecord.Project != projectName {
-		t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
+	if responseRecord.ProjectID != projectID {
+		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
 	}
 
 	// 値の確認
@@ -488,21 +461,24 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 	// valueフィールドが省略された場合にデフォルト値1が設定されることをテスト
 
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "exercise"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// valueを省略したテストリクエストデータ
 	reqBody := map[string]any{
-		"timestamp": "2025-05-21T14:30:00Z",
+		"project_id": projectID,
+		"timestamp":  "2025-05-21T14:30:00Z",
 		// valueは意図的に省略
 	}
 	reqBytes, _ := json.Marshal(reqBody)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -533,8 +509,8 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 	}
 
 	// プロジェクト名の確認
-	if responseRecord.Project != projectName {
-		t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
+	if responseRecord.ProjectID != projectID {
+		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
 	}
 
 	// デフォルト値の確認
@@ -548,14 +524,20 @@ func TestCreateRecordWithEmptyBody(t *testing.T) {
 	// リクエストボディが空の場合のテスト
 
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "exercise"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
-	// 空のリクエストボディ
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/"+projectName+"/r", nil)
+	// project_idのみのリクエストボディ（timestamp, valueは省略）
+	reqBody := map[string]any{
+		"project_id": projectID,
+	}
+	reqBytes, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/r", bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -591,8 +573,8 @@ func TestCreateRecordWithEmptyBody(t *testing.T) {
 	}
 
 	// プロジェクト名の確認
-	if responseRecord.Project != projectName {
-		t.Errorf("Expected Project %s, got %s", projectName, responseRecord.Project)
+	if responseRecord.ProjectID != projectID {
+		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
 	}
 
 	// デフォルト値の確認
@@ -602,16 +584,52 @@ func TestCreateRecordWithEmptyBody(t *testing.T) {
 	}
 }
 
+func TestCreateRecordWithNonExistentProject(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// 存在しないproject_idを指定してレコード作成を試みる
+	nonExistentProjectID := int64(9999)
+	reqBody := map[string]any{
+		"project_id": nonExistentProjectID,
+		"timestamp":  "2025-05-21T14:30:00Z",
+		"value":      1,
+	}
+	reqBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/r", bytes.NewBuffer(reqBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// 404 Not Foundが返ることを確認
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status code %d, got %d", http.StatusNotFound, w.Code)
+		t.Logf("Response body: %s", w.Body.String())
+	}
+
+	// エラーメッセージが"Project not found"であることを確認
+	responseBody := w.Body.String()
+	if !strings.Contains(responseBody, "Project not found") {
+		t.Errorf("Expected error message to contain 'Project not found', got: %s", responseBody)
+	}
+}
+
 func TestGetRecordEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 
-	// プロジェクト名
-	projectName := "exercise"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, projectName, 1, nil)
+	testRecord, err := model.NewRecord(timestamp, projectID, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -620,7 +638,7 @@ func TestGetRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストの作成 - 新しいURLパスを使用
-	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -645,15 +663,15 @@ func TestGetRecordEndpoint(t *testing.T) {
 	t.Logf("Response record: %+v", responseRecord)
 
 	if responseRecord.ID != testRecord.ID {
-		t.Errorf("Expected ID %s, got %s", testRecord.ID, responseRecord.ID)
+		t.Errorf("Expected ID %d, got %d", testRecord.ID, responseRecord.ID)
 	}
 
 	if !responseRecord.Timestamp.Equal(testRecord.Timestamp) {
 		t.Errorf("Expected Timestamp %v, got %v", testRecord.Timestamp, responseRecord.Timestamp)
 	}
 
-	if responseRecord.Project != testRecord.Project {
-		t.Errorf("Expected Project %s, got %s", testRecord.Project, responseRecord.Project)
+	if responseRecord.ProjectID != testRecord.ProjectID {
+		t.Errorf("Expected Project %d, got %d", testRecord.ProjectID, responseRecord.ProjectID)
 	}
 
 	t.Logf("Expected value: %d, Response value: %d", testRecord.Value, responseRecord.Value)
@@ -664,49 +682,12 @@ func TestGetRecordEndpoint(t *testing.T) {
 
 func TestGetNonExistentRecordEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
-
-	// プロジェクト名
-	projectName := "exercise"
 
 	// 存在しないIDでリクエスト
-	nonExistentID := uuid.New().String()
-	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+projectName+"/r/"+nonExistentID, nil)
-	req.Header.Set("X-API-Key", testAPIKey)
-
-	// レスポンスレコーダーの作成
-	w := httptest.NewRecorder()
-
-	// ハンドラの実行
-	server.ServeHTTP(w, req)
-
-	// レスポンスのステータスコードを確認（404が期待される）
-	if w.Code != http.StatusNotFound {
-		t.Errorf("Expected status code %d, got %d", http.StatusNotFound, w.Code)
-	}
-}
-
-func TestGetRecordFromWrongProject(t *testing.T) {
-	// モックストアの準備
-	mockStore := NewMockRecordStore()
-
-	// 正しいプロジェクト名と異なるプロジェクト名
-	correctProject := "exercise"
-	wrongProject := "diet"
-
-	// テスト用のレコードを作成
-	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, correctProject, 1, nil)
-	if err != nil {
-		t.Fatalf("Failed to create test record: %v", err)
-	}
-	mockStore.CreateRecord(context.Background(), testRecord)
-
-	server := NewServer(mockStore, newTestConfig())
-
-	// 間違ったプロジェクト名でリクエスト
-	req := httptest.NewRequest(http.MethodGet, "/api/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
+	nonExistentID := int64(9999)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%d", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -723,14 +704,14 @@ func TestGetRecordFromWrongProject(t *testing.T) {
 
 func TestDeleteRecordEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 
-	// プロジェクト名
-	projectName := "exercise"
+	// プロジェクト
+	projectID := int64(42)
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, projectName, 1, nil)
+	testRecord, err := model.NewRecord(timestamp, projectID, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -739,7 +720,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+projectName+"/r/"+testRecord.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -762,15 +743,12 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 
 func TestDeleteNonExistentRecordEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "exercise"
-
 	// 存在しないIDでリクエスト
-	nonExistentID := uuid.New().String()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+projectName+"/r/"+nonExistentID, nil)
+	nonExistentID := int64(9999)
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%d", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -785,17 +763,18 @@ func TestDeleteNonExistentRecordEndpoint(t *testing.T) {
 	}
 }
 
-func TestDeleteRecordFromWrongProject(t *testing.T) {
+func TestUpdateRecordEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 
-	// 正しいプロジェクト名と異なるプロジェクト名
-	correctProject := "exercise"
-	wrongProject := "diet"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// テスト用のレコードを作成
-	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, correctProject, 1, nil)
+	originalTimestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+	testRecord, err := model.NewRecord(originalTimestamp, projectID, 5, []string{"tag1", "tag2"})
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -803,8 +782,18 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 
 	server := NewServer(mockStore, newTestConfig())
 
-	// 間違ったプロジェクト名でリクエスト
-	req := httptest.NewRequest(http.MethodDelete, "/api/v0/p/"+wrongProject+"/r/"+testRecord.ID.String(), nil)
+	// 更新データ
+	newTimestamp := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
+	updateData := map[string]any{
+		"timestamp": newTimestamp.Format(time.RFC3339),
+		"value":     10,
+		"tags":      []string{"updated-tag1", "updated-tag2", "updated-tag3"},
+	}
+	reqBytes, _ := json.Marshal(updateData)
+
+	// リクエストの作成
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -813,43 +802,308 @@ func TestDeleteRecordFromWrongProject(t *testing.T) {
 	// ハンドラの実行
 	server.ServeHTTP(w, req)
 
-	// レスポンスのステータスコードを確認（404が期待される）
+	// レスポンスのステータスコードを確認
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+		t.Logf("Response body: %s", w.Body.String())
+		return
+	}
+
+	// レスポンスボディをデコード
+	var responseRecord model.Record
+	if err := json.NewDecoder(w.Body).Decode(&responseRecord); err != nil {
+		t.Fatalf("Failed to decode response body: %v", err)
+	}
+
+	// 各フィールドが更新されていることを確認
+	if !responseRecord.Timestamp.Equal(newTimestamp) {
+		t.Errorf("Expected Timestamp %v, got %v", newTimestamp, responseRecord.Timestamp)
+	}
+	if responseRecord.Value != 10 {
+		t.Errorf("Expected Value 10, got %d", responseRecord.Value)
+	}
+	if len(responseRecord.Tags) != 3 {
+		t.Errorf("Expected 3 tags, got %d", len(responseRecord.Tags))
+	}
+	expectedTags := []string{"updated-tag1", "updated-tag2", "updated-tag3"}
+	if !slices.Equal(responseRecord.Tags, expectedTags) {
+		t.Errorf("Expected tags %v, got %v", expectedTags, responseRecord.Tags)
+	}
+
+	// レコードIDとプロジェクトIDは変わらないことを確認
+	if responseRecord.ID != testRecord.ID {
+		t.Errorf("Expected ID %d, got %d", testRecord.ID, responseRecord.ID)
+	}
+	if responseRecord.ProjectID != projectID {
+		t.Errorf("Expected ProjectID %d, got %d", projectID, responseRecord.ProjectID)
+	}
+}
+
+func TestUpdateRecordPartialFields(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockStore()
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
+	server := NewServer(mockStore, newTestConfig())
+
+	t.Run("Update timestamp only", func(t *testing.T) {
+		// テスト用のレコードを作成
+		originalTimestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+		testRecord, _ := model.NewRecord(originalTimestamp, projectID, 5, []string{"tag1"})
+		mockStore.CreateRecord(context.Background(), testRecord)
+
+		// timestampのみ更新
+		newTimestamp := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
+		updateData := map[string]any{
+			"timestamp": newTimestamp.Format(time.RFC3339),
+		}
+		reqBytes, _ := json.Marshal(updateData)
+
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var responseRecord model.Record
+		json.NewDecoder(w.Body).Decode(&responseRecord)
+
+		// timestampのみ更新され、他のフィールドは保持されていることを確認
+		if !responseRecord.Timestamp.Equal(newTimestamp) {
+			t.Errorf("Expected Timestamp %v, got %v", newTimestamp, responseRecord.Timestamp)
+		}
+		if responseRecord.Value != 5 {
+			t.Errorf("Expected Value 5 (unchanged), got %d", responseRecord.Value)
+		}
+		if !slices.Equal(responseRecord.Tags, []string{"tag1"}) {
+			t.Errorf("Expected tags [tag1] (unchanged), got %v", responseRecord.Tags)
+		}
+	})
+
+	t.Run("Update value only", func(t *testing.T) {
+		// テスト用のレコードを作成
+		originalTimestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+		testRecord, _ := model.NewRecord(originalTimestamp, projectID, 5, []string{"tag1"})
+		mockStore.CreateRecord(context.Background(), testRecord)
+
+		// valueのみ更新
+		updateData := map[string]any{
+			"value": 20,
+		}
+		reqBytes, _ := json.Marshal(updateData)
+
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var responseRecord model.Record
+		json.NewDecoder(w.Body).Decode(&responseRecord)
+
+		// valueのみ更新され、他のフィールドは保持されていることを確認
+		if responseRecord.Value != 20 {
+			t.Errorf("Expected Value 20, got %d", responseRecord.Value)
+		}
+		if !responseRecord.Timestamp.Equal(originalTimestamp) {
+			t.Errorf("Expected Timestamp %v (unchanged), got %v", originalTimestamp, responseRecord.Timestamp)
+		}
+		if !slices.Equal(responseRecord.Tags, []string{"tag1"}) {
+			t.Errorf("Expected tags [tag1] (unchanged), got %v", responseRecord.Tags)
+		}
+	})
+
+	t.Run("Update tags only", func(t *testing.T) {
+		// テスト用のレコードを作成
+		originalTimestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+		testRecord, _ := model.NewRecord(originalTimestamp, projectID, 5, []string{"tag1"})
+		mockStore.CreateRecord(context.Background(), testRecord)
+
+		// tagsのみ更新
+		updateData := map[string]any{
+			"tags": []string{"new-tag1", "new-tag2"},
+		}
+		reqBytes, _ := json.Marshal(updateData)
+
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var responseRecord model.Record
+		json.NewDecoder(w.Body).Decode(&responseRecord)
+
+		// tagsのみ更新され、他のフィールドは保持されていることを確認
+		if !slices.Equal(responseRecord.Tags, []string{"new-tag1", "new-tag2"}) {
+			t.Errorf("Expected tags [new-tag1 new-tag2], got %v", responseRecord.Tags)
+		}
+		if responseRecord.Value != 5 {
+			t.Errorf("Expected Value 5 (unchanged), got %d", responseRecord.Value)
+		}
+		if !responseRecord.Timestamp.Equal(originalTimestamp) {
+			t.Errorf("Expected Timestamp %v (unchanged), got %v", originalTimestamp, responseRecord.Timestamp)
+		}
+	})
+
+	t.Run("Clear tags with empty array", func(t *testing.T) {
+		// テスト用のレコードを作成
+		originalTimestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+		testRecord, _ := model.NewRecord(originalTimestamp, projectID, 5, []string{"tag1", "tag2"})
+		mockStore.CreateRecord(context.Background(), testRecord)
+
+		// 空配列でtagsをクリア
+		updateData := map[string]any{
+			"tags": []string{},
+		}
+		reqBytes, _ := json.Marshal(updateData)
+
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+			return
+		}
+
+		var responseRecord model.Record
+		json.NewDecoder(w.Body).Decode(&responseRecord)
+
+		// tagsが空になっていることを確認
+		if len(responseRecord.Tags) != 0 {
+			t.Errorf("Expected 0 tags, got %d: %v", len(responseRecord.Tags), responseRecord.Tags)
+		}
+	})
+}
+
+func TestUpdateNonExistentRecord(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// 存在しないrecord_idで更新を試みる
+	nonExistentID := int64(9999)
+	updateData := map[string]any{
+		"value": 10,
+	}
+	reqBytes, _ := json.Marshal(updateData)
+
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", nonExistentID), bytes.NewBuffer(reqBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// 404 Not Foundが返ることを確認
 	if w.Code != http.StatusNotFound {
 		t.Errorf("Expected status code %d, got %d", http.StatusNotFound, w.Code)
 	}
+}
 
-	// レコードがまだ存在することを確認
-	_, err = mockStore.GetRecord(context.Background(), testRecord.ID)
-	if err != nil {
-		t.Errorf("Record should still exist, but got error: %v", err)
-	}
+func TestUpdateRecordWithInvalidData(t *testing.T) {
+	// モックストアの準備
+	mockStore := NewMockStore()
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
+	// テスト用のレコードを作成
+	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
+	testRecord, _ := model.NewRecord(timestamp, projectID, 5, []string{})
+	mockStore.CreateRecord(context.Background(), testRecord)
+
+	server := NewServer(mockStore, newTestConfig())
+
+	t.Run("Invalid timestamp format", func(t *testing.T) {
+		updateData := map[string]any{
+			"timestamp": "invalid-timestamp",
+		}
+		reqBytes, _ := json.Marshal(updateData)
+
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		// 400 Bad Requestが返ることを確認
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	t.Run("Invalid record_id format", func(t *testing.T) {
+		updateData := map[string]any{
+			"value": 10,
+		}
+		reqBytes, _ := json.Marshal(updateData)
+
+		// 不正なrecord_id（文字列）
+		req := httptest.NewRequest(http.MethodPut, "/api/v0/r/invalid-id", bytes.NewBuffer(reqBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", testAPIKey)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, req)
+
+		// 400 Bad Requestが返ることを確認
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
 }
 
 func TestGetGraphEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 
-	// プロジェクト名
-	projectName := "exercise"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// テスト用のレコードを作成 - 同じ日付で複数レコード
 	timestamp1 := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(timestamp1, projectName, 3, nil)
+	record1, _ := model.NewRecord(timestamp1, projectID, 3, nil)
 	mockStore.CreateRecord(context.Background(), record1)
 
 	// 同じ日の別の時間のレコード
 	timestamp2 := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(timestamp2, projectName, 2, nil)
+	record2, _ := model.NewRecord(timestamp2, projectID, 2, nil)
 	mockStore.CreateRecord(context.Background(), record2)
 
 	// 別の日のレコード
 	timestamp3 := time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(timestamp3, projectName, 1, nil)
+	record3, _ := model.NewRecord(timestamp3, projectID, 1, nil)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別プロジェクトのレコード (グラフに含まれないはず)
 	timestamp4 := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, "another_project", 5, nil)
+	record4, _ := model.NewRecord(timestamp4, int64(43), 5, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -857,8 +1111,8 @@ func TestGetGraphEndpoint(t *testing.T) {
 	// リクエストの作成 (日付範囲指定あり)
 	fromDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 31, 23, 59, 59, 0, time.UTC)
-	url := fmt.Sprintf("/p/%s/graph?from=%s&to=%s",
-		projectName,
+	url := fmt.Sprintf("/p/%d/graph?from=%s&to=%s",
+		projectID,
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -903,18 +1157,20 @@ func TestGetGraphEndpoint(t *testing.T) {
 
 func TestGetGraphEndpointWithoutData(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 
-	// プロジェクト名
-	projectName := "empty_project"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	server := NewServer(mockStore, newTestConfig())
 
 	// 明示的に日付範囲を指定する（データなしだが日付範囲は有効）
 	fromDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 31, 23, 59, 59, 0, time.UTC)
-	url := fmt.Sprintf("/p/%s/graph?from=%s&to=%s",
-		projectName,
+	url := fmt.Sprintf("/p/%d/graph?from=%s&to=%s",
+		projectID,
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -951,27 +1207,29 @@ func TestGetGraphEndpointWithoutData(t *testing.T) {
 
 func TestListRecordsEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 
-	// プロジェクト名
-	projectName := "exercise"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// テスト用のレコードを複数作成
 	timestamp1 := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(timestamp1, projectName, 1, nil)
+	record1, _ := model.NewRecord(timestamp1, projectID, 1, nil)
 	mockStore.CreateRecord(context.Background(), record1)
 
 	timestamp2 := time.Date(2025, 5, 21, 12, 0, 0, 0, time.UTC)
-	record2, _ := model.NewRecord(timestamp2, projectName, 2, nil)
+	record2, _ := model.NewRecord(timestamp2, projectID, 2, nil)
 	mockStore.CreateRecord(context.Background(), record2)
 
 	timestamp3 := time.Date(2025, 5, 22, 14, 0, 0, 0, time.UTC)
-	record3, _ := model.NewRecord(timestamp3, projectName, 3, nil)
+	record3, _ := model.NewRecord(timestamp3, projectID, 3, nil)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// 別のプロジェクトのレコード（取得されないはず）
 	timestamp4 := time.Date(2025, 5, 23, 16, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, "another-project", 4, nil)
+	record4, _ := model.NewRecord(timestamp4, int64(43), 4, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -979,8 +1237,8 @@ func TestListRecordsEndpoint(t *testing.T) {
 	// リクエストの作成 - 日付範囲を指定
 	fromDate := time.Date(2025, 5, 15, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 25, 23, 59, 59, 0, time.UTC)
-	url := fmt.Sprintf("/api/v0/p/%s/r?from=%s&to=%s",
-		projectName,
+	url := fmt.Sprintf("/api/v0/r?project_id=%d&from=%s&to=%s",
+		projectID,
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -1006,43 +1264,45 @@ func TestListRecordsEndpoint(t *testing.T) {
 	}
 
 	// 正しいレコード数が返されていることを確認
-	if len(response.Result) != 3 {
-		t.Errorf("Expected 3 records, got %d", len(response.Result))
+	if len(response.Items) != 3 {
+		t.Errorf("Expected 3 records, got %d", len(response.Items))
 	}
-	responseRecords := response.Result
+	items := response.Items
 
 	// レコードの内容を確認
-	t.Logf("Response records: %+v", responseRecords)
+	t.Logf("Response records: %+v", items)
 
 	// recordsMap は検証のためにIDベースでレコードにアクセスできるマップ
-	recordsMap := make(map[string]*model.Record)
-	for _, r := range responseRecords {
-		recordsMap[r.ID.String()] = r
+	recordsMap := make(map[int64]*model.Record)
+	for _, r := range items {
+		recordsMap[r.ID] = r
 	}
 
 	// 期待されるレコードが含まれているか確認
-	if _, ok := recordsMap[record1.ID.String()]; !ok {
+	if _, ok := recordsMap[record1.ID]; !ok {
 		t.Errorf("Record 1 missing from response")
 	}
-	if _, ok := recordsMap[record2.ID.String()]; !ok {
+	if _, ok := recordsMap[record2.ID]; !ok {
 		t.Errorf("Record 2 missing from response")
 	}
-	if _, ok := recordsMap[record3.ID.String()]; !ok {
+	if _, ok := recordsMap[record3.ID]; !ok {
 		t.Errorf("Record 3 missing from response")
 	}
 
 	// 別のプロジェクトのレコードが含まれていないことを確認
-	if _, ok := recordsMap[record4.ID.String()]; ok {
+	if _, ok := recordsMap[record4.ID]; ok {
 		t.Errorf("Record 4 from another project should not be included")
 	}
 }
 
 func TestListRecordsWithPagination(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 
-	// プロジェクト名
-	projectName := "pagination-test"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project for pagination")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// テスト用に10件のレコードを作成（新しい順にallRecordsに格納）
 	var allRecords []*model.Record
@@ -1050,7 +1310,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	for i := 9; i >= 0; i-- {
 		recordTime := baseTime.Add(time.Duration(i) * time.Hour)
-		record, _ := model.NewRecord(recordTime, projectName, i+1, nil)
+		record, _ := model.NewRecord(recordTime, projectID, i+1, nil)
 		mockStore.CreateRecord(context.Background(), record)
 		allRecords = append(allRecords, record)
 	}
@@ -1059,7 +1319,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	// ケース1: limit=3 で最初の3件を取得（カーソルなし）
 	t.Run("First Page", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=3", projectName)
+		url := fmt.Sprintf("/api/v0/r?limit=3&project_id=%d", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1075,26 +1335,21 @@ func TestListRecordsWithPagination(t *testing.T) {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		records := response.Result
+		records := response.Items
 		if len(records) != 3 {
 			t.Errorf("Expected 3 records, got %d", len(records))
-		}
-
-		// 最初の3件のレコードが正しいか確認
-		for i := range 3 {
-			if records[i].ID != allRecords[i].ID {
-				t.Errorf("Record at index %d has incorrect ID", i)
-			}
-		}
-
-		// nextフィールドが存在することを確認（まだレコードが残っている）
-		if response.Next == nil {
-			t.Error("Expected next field to be present")
 		} else {
-			// nextにcursorが含まれていることを確認
-			if !strings.Contains(*response.Next, "cursor=") {
-				t.Errorf("Expected next URL to contain cursor parameter, got: %s", *response.Next)
+			// 最初の3件のレコードが正しいか確認
+			for i := range 3 {
+				if records[i].ID != allRecords[i].ID {
+					t.Errorf("Record at index %d has incorrect ID", i)
+				}
 			}
+		}
+
+		// cursorフィールドが存在することを確認（まだレコードが残っている）
+		if response.Cursor == nil {
+			t.Error("Expected cursor field to be present")
 		}
 	})
 
@@ -1105,13 +1360,13 @@ func TestListRecordsWithPagination(t *testing.T) {
 		thirdRecord := allRecords[2]
 		cursor := model.EncodeRecordCursor(
 			thirdRecord.Timestamp,
-			thirdRecord.ID.String(),
-			projectName,
+			thirdRecord.ID,
+			projectID,
 			time.Time{}, // from
 			time.Time{}, // to
 			nil,         // tags
 		)
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=4&cursor=%s", projectName, cursor)
+		url := fmt.Sprintf("/api/v0/r?limit=4&project_id=%d&cursor=%s", projectID, cursor)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1127,17 +1382,18 @@ func TestListRecordsWithPagination(t *testing.T) {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		records := response.Result
-		if len(records) != 4 {
-			t.Errorf("Expected 4 records, got %d", len(records))
-		}
+		items := response.Items
+		if len(items) != 4 {
+			t.Errorf("Expected 4 records, got %d", len(items))
+		} else {
 
-		// カーソルの次のレコードから4件が返されることを確認
-		for i := range 4 {
-			expectedIndex := i + 3 // allRecords[3], [4], [5], [6]
-			if records[i].ID != allRecords[expectedIndex].ID {
-				t.Errorf("Record at index %d has incorrect ID, expected %s, got %s",
-					i, allRecords[expectedIndex].ID, records[i].ID)
+			// カーソルの次のレコードから4件が返されることを確認
+			for i := range 4 {
+				expectedIndex := i + 3 // allRecords[3], [4], [5], [6]
+				if items[i].ID != allRecords[expectedIndex].ID {
+					t.Errorf("Record at index %d has incorrect ID, expected %d, got %d",
+						i, allRecords[expectedIndex].ID, items[i].ID)
+				}
 			}
 		}
 	})
@@ -1149,13 +1405,13 @@ func TestListRecordsWithPagination(t *testing.T) {
 		lastRecord := allRecords[9]
 		cursor := model.EncodeRecordCursor(
 			lastRecord.Timestamp,
-			lastRecord.ID.String(),
-			projectName,
+			lastRecord.ID,
+			projectID,
 			time.Time{}, // from
 			time.Time{}, // to
 			nil,         // tags
 		)
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=5&cursor=%s", projectName, cursor)
+		url := fmt.Sprintf("/api/v0/r?limit=5&project_id=%d&cursor=%s", projectID, cursor)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1171,13 +1427,13 @@ func TestListRecordsWithPagination(t *testing.T) {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(response.Result) != 0 {
-			t.Errorf("Expected 0 records, got %d", len(response.Result))
+		if len(response.Items) != 0 {
+			t.Errorf("Expected 0 records, got %d", len(response.Items))
 		}
 
-		// nextフィールドがないことを確認（次ページなし）
-		if response.Next != nil {
-			t.Errorf("Expected next field to be nil, got: %s", *response.Next)
+		// cursorフィールドがないことを確認（次ページなし）
+		if response.Cursor != nil {
+			t.Errorf("Expected cursor field to be nil, got: %s", *response.Cursor)
 		}
 	})
 }
@@ -1185,19 +1441,19 @@ func TestListRecordsWithPagination(t *testing.T) {
 // TestListRecordsWithInvalidPaginationParams tests pagination with invalid parameters
 func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	projectName := "test-project"
+	projectID := int64(42)
 
 	// テスト用にレコードを1件作成
 	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-	record, _ := model.NewRecord(baseTime, projectName, 1, nil)
+	record, _ := model.NewRecord(baseTime, projectID, 1, nil)
 	mockStore.CreateRecord(context.Background(), record)
 
 	// ケース1: 無効なlimit（非数値）
 	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=abc", projectName)
+		url := fmt.Sprintf("/api/v0/r?limit=abc&project_id=%d", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1210,7 +1466,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 
 	// ケース2: 無効なlimit（負の数）
 	t.Run("Invalid limit (negative)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=-10", projectName)
+		url := fmt.Sprintf("/api/v0/r?limit=-10&project_id=%d", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1223,7 +1479,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 
 	// ケース3: 無効なlimit（ゼロ）
 	t.Run("Invalid limit (zero)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/p/%s/r?limit=0", projectName)
+		url := fmt.Sprintf("/api/v0/r?limit=0&project_id=%d", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1239,7 +1495,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 		// Base64エンコードされていない不正な形式のcursorを渡す
 		// 新しい実装では、API層でcursorをデコードするため、
 		// 不正な形式の場合は400 BadRequestが返される
-		url := fmt.Sprintf("/api/v0/p/%s/r?cursor=non-existent-id", projectName)
+		url := fmt.Sprintf("/api/v0/r?cursor=non-existent-id&project_id=%d", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1252,38 +1508,39 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 	})
 }
 
-
 // TestDeleteProject はプロジェクト削除エンドポイントのテスト
 func TestDeleteProject(t *testing.T) {
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
+
+	projectID := int64(42)
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	// プロジェクト "test" にレコードを追加
-	rec1, err := model.NewRecord(timestamp, "test", 10, nil)
+	// プロジェクトにレコードを追加
+	rec1, err := model.NewRecord(timestamp, projectID, 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec1.ID.String()] = rec1
+	mockStore.records[rec1.ID] = rec1
 
-	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), "test", 15, nil)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), projectID, 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec2.ID.String()] = rec2
+	mockStore.records[rec2.ID] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(timestamp, "another", 20, nil)
+	rec3, err := model.NewRecord(timestamp, int64(43), 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec3.ID.String()] = rec3
+	mockStore.records[rec3.ID] = rec3
 
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト対象のエンドポイントを呼び出す
-	req := httptest.NewRequest("DELETE", "/api/v0/p/test", nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/v0/p/%d", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1296,7 +1553,7 @@ func TestDeleteProject(t *testing.T) {
 	// プロジェクトのレコードが削除されたことを確認
 	pagination, _ := model.NewPagination("100", "")
 	testRecords, err := mockStore.ListRecords(context.Background(), &store.ListRecordsParams{
-		Project:    "test",
+		ProjectID:  projectID,
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
 		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
 		Pagination: pagination,
@@ -1318,11 +1575,12 @@ func TestDeleteProject(t *testing.T) {
 
 // TestDeleteNonExistentProject は存在しないプロジェクトの削除テスト
 func TestDeleteNonExistentProject(t *testing.T) {
-	store := NewMockRecordStore()
+	store := NewMockStore()
 	server := NewServer(store, newTestConfig())
 
-	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクト名
-	req := httptest.NewRequest("DELETE", "/api/v0/p/non-existent", nil)
+	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクトID
+	nonExistentID := int64(99999)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/v0/p/%d", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1336,22 +1594,24 @@ func TestDeleteNonExistentProject(t *testing.T) {
 // TestHandleGetGraph は指定プロジェクトのヒートマップグラフ生成・返却をテストします。
 func TestHandleGetGraph(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "test-project"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project for graph")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// テスト用のレコードを作成
 	now := time.Now()
-	record1, err := model.NewRecord(now.AddDate(0, 0, -7), projectName, 5, nil)
+	record1, err := model.NewRecord(now.AddDate(0, 0, -7), projectID, 5, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
 	mockStore.CreateRecord(context.Background(), record1)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph", nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%d/graph", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
@@ -1380,14 +1640,16 @@ func TestHandleGetGraph(t *testing.T) {
 // TestHandleGetGraphWithTrackParam はtrackパラメータを使ったアクセスカウンター機能をテストします。
 func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "counter-test"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// trackパラメータ付きのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph?track&tags=good", nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%d/graph?track&tags=good", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
@@ -1412,14 +1674,14 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	// 追加されたレコードの内容を確認
 	var foundRecord *model.Record
 	for _, record := range mockStore.records {
-		if record.Project == projectName {
+		if record.ProjectID == projectID {
 			foundRecord = record
 			break
 		}
 	}
 
 	if foundRecord == nil {
-		t.Errorf("No record created for project %s", projectName)
+		t.Errorf("No record created for project %d", projectID)
 		return
 	}
 
@@ -1445,7 +1707,7 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 // TestHandleGetGraphWithoutTrackParam はtrackパラメータなしの場合にレコードが作成されないことをテストします。
 func TestHandleGetGraphWithoutTrackParam(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// プロジェクト名
@@ -1472,14 +1734,16 @@ func TestHandleGetGraphWithoutTrackParam(t *testing.T) {
 // TestHandleGetGraphSVGExtension はSVG拡張子付きのURLでグラフを取得できることをテストします。
 func TestHandleGetGraphSVGExtension(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// プロジェクト名
-	projectName := "svg-ext-test"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("svg-ext-test", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// .svg拡張子付きのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, "/p/"+projectName+"/graph.svg", nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%d/graph.svg", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
@@ -1502,8 +1766,8 @@ func TestHandleGetGraphSVGExtension(t *testing.T) {
 // TestBulkDeleteRecords はレコード一括削除APIのテスト
 func TestBulkDeleteRecords(t *testing.T) {
 	// プロジェクト名
-	project1 := "project1"
-	project2 := "project2"
+	project1 := int64(42)
+	project2 := int64(43)
 
 	// テスト用の基準日時
 	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
@@ -1511,7 +1775,7 @@ func TestBulkDeleteRecords(t *testing.T) {
 	// テストケース
 	tests := []struct {
 		name           string
-		project        string
+		project        int64
 		until          time.Time
 		expectedStatus int
 		expectedCount  int
@@ -1531,13 +1795,6 @@ func TestBulkDeleteRecords(t *testing.T) {
 			expectedCount:  3, // project2の全レコードが削除される
 		},
 		{
-			name:           "全プロジェクトの一部レコード削除",
-			project:        "",                        // プロジェクト指定なし
-			until:          baseTime.AddDate(0, 0, 2), // 2日目までのレコードを削除
-			expectedStatus: http.StatusOK,
-			expectedCount:  4, // 両方のプロジェクトから2日分ずつ
-		},
-		{
 			name:           "該当レコードなし",
 			project:        project1,
 			until:          baseTime.AddDate(0, 0, -1), // ベース時間より前（該当レコードなし）
@@ -1549,7 +1806,7 @@ func TestBulkDeleteRecords(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// 各テストケースごとに新しいモックストアを作成
-			mockStore := NewMockRecordStore()
+			mockStore := NewMockStore()
 
 			// project1のレコードを作成（5件）
 			for i := range 5 {
@@ -1568,13 +1825,15 @@ func TestBulkDeleteRecords(t *testing.T) {
 			// 各テストケースごとに新しいサーバーも作成
 			server := NewServer(mockStore, newTestConfig())
 
-			// リクエストURLの組み立て
-			url := "/api/v0/r?until=" + tc.until.Format(time.RFC3339)
-			if tc.project != "" {
-				url += "&project=" + tc.project
+			// リクエストボディの作成
+			reqBody := map[string]any{
+				"project_id": tc.project,
+				"until":      tc.until.Format(time.RFC3339),
 			}
+			reqBytes, _ := json.Marshal(reqBody)
 
-			req := httptest.NewRequest(http.MethodDelete, url, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/v0/bulk-deletion", bytes.NewBuffer(reqBytes))
+			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-API-Key", testAPIKey)
 			w := httptest.NewRecorder()
 
@@ -1608,30 +1867,37 @@ func TestBulkDeleteRecords(t *testing.T) {
 
 // TestBulkDeleteRecordsWithInvalidParams はレコード一括削除APIの不正パラメータのテスト
 func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テストケース
 	tests := []struct {
 		name           string
-		url            string
+		reqBody        map[string]any
 		expectedStatus int
 	}{
 		{
-			name:           "until パラメータ不足",
-			url:            "/api/v0/r",
+			name: "until パラメータ不足",
+			reqBody: map[string]any{
+				"project_id": int64(42),
+			},
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "不正な until フォーマット",
-			url:            "/api/v0/r?until=invalid-date",
+			name: "不正な until フォーマット",
+			reqBody: map[string]any{
+				"project_id": int64(42),
+				"until":      "invalid-date",
+			},
 			expectedStatus: http.StatusBadRequest,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodDelete, tc.url, nil)
+			reqBytes, _ := json.Marshal(tc.reqBody)
+			req := httptest.NewRequest(http.MethodPost, "/api/v0/bulk-deletion", bytes.NewBuffer(reqBytes))
+			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-API-Key", testAPIKey)
 			w := httptest.NewRecorder()
 
@@ -1646,18 +1912,24 @@ func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
 
 // TestCreateRecordWithTags はタグ付きレコード作成のテスト
 func TestCreateRecordWithTags(t *testing.T) {
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// リクエストボディ
 	requestBody := map[string]any{
-		"timestamp": "2025-05-21T14:30:00Z",
-		"value":     5,
-		"tags":      []string{"work", "important", "urgent"},
+		"project_id": projectID,
+		"timestamp":  "2025-05-21T14:30:00Z",
+		"value":      5,
+		"tags":       []string{"work", "important", "urgent"},
 	}
 
 	jsonBody, _ := json.Marshal(requestBody)
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/test-project/r", bytes.NewReader(jsonBody))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/r", bytes.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -1699,18 +1971,24 @@ func TestCreateRecordWithTags(t *testing.T) {
 
 // TestCreateRecordWithEmptyTags は空タグ配列でのレコード作成のテスト
 func TestCreateRecordWithEmptyTags(t *testing.T) {
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// リクエストボディ（空のタグ配列）
 	requestBody := map[string]any{
-		"timestamp": "2025-05-21T14:30:00Z",
-		"value":     3,
-		"tags":      []string{},
+		"project_id": projectID,
+		"timestamp":  "2025-05-21T14:30:00Z",
+		"value":      3,
+		"tags":       []string{},
 	}
 
 	jsonBody, _ := json.Marshal(requestBody)
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/p/test-project/r", bytes.NewReader(jsonBody))
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/r", bytes.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -1734,17 +2012,17 @@ func TestCreateRecordWithEmptyTags(t *testing.T) {
 
 // TestListRecordsWithTagsFilter はタグフィルタでのレコード取得のテスト
 func TestListRecordsWithTagsFilter(t *testing.T) {
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	projectName := "test-project"
+	projectID := int64(42)
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
 
 	// 異なるタグを持つレコードを作成
-	record1, _ := model.NewRecord(baseTime, projectName, 1, []string{"work", "urgent"})
-	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectName, 2, []string{"personal", "hobby"})
-	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), projectName, 3, []string{"work", "meeting"})
-	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), projectName, 4, []string{"personal", "urgent"})
+	record1, _ := model.NewRecord(baseTime, projectID, 1, []string{"work", "urgent"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectID, 2, []string{"personal", "hobby"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), projectID, 3, []string{"work", "meeting"})
+	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), projectID, 4, []string{"personal", "urgent"})
 
 	mockStore.CreateRecord(context.Background(), record1)
 	mockStore.CreateRecord(context.Background(), record2)
@@ -1754,44 +2032,44 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 	tests := []struct {
 		name          string
 		tagsFilter    string
-		expectedIDs   []uuid.UUID
+		expectedIDs   []int64
 		expectedCount int
 	}{
 		{
 			name:          "Filter by work tag",
 			tagsFilter:    "work",
-			expectedIDs:   []uuid.UUID{record1.ID, record3.ID},
+			expectedIDs:   []int64{record1.ID, record3.ID},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by personal tag",
 			tagsFilter:    "personal",
-			expectedIDs:   []uuid.UUID{record2.ID, record4.ID},
+			expectedIDs:   []int64{record2.ID, record4.ID},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by urgent tag (OR)",
 			tagsFilter:    "urgent",
-			expectedIDs:   []uuid.UUID{record1.ID, record4.ID},
+			expectedIDs:   []int64{record1.ID, record4.ID},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by multiple tags (OR)",
 			tagsFilter:    "work,hobby",
-			expectedIDs:   []uuid.UUID{record1.ID, record2.ID, record3.ID},
+			expectedIDs:   []int64{record1.ID, record2.ID, record3.ID},
 			expectedCount: 3,
 		},
 		{
 			name:          "Filter by non-existent tag",
 			tagsFilter:    "nonexistent",
-			expectedIDs:   []uuid.UUID{},
+			expectedIDs:   []int64{},
 			expectedCount: 0,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			url := fmt.Sprintf("/api/v0/p/%s/r?tags=%s", projectName, tc.tagsFilter)
+			url := fmt.Sprintf("/api/v0/r?project_id=%d&tags=%s", projectID, tc.tagsFilter)
 			req := httptest.NewRequest(http.MethodGet, url, nil)
 			req.Header.Set("X-API-Key", testAPIKey)
 
@@ -1807,20 +2085,20 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 				t.Fatalf("Failed to decode response: %v", err)
 			}
 
-			records := response.Result
-			if len(records) != tc.expectedCount {
-				t.Errorf("Expected %d records, got %d", tc.expectedCount, len(records))
+			items := response.Items
+			if len(items) != tc.expectedCount {
+				t.Errorf("Expected %d records, got %d", tc.expectedCount, len(items))
 			}
 
 			// IDが期待されるものと一致するかチェック
-			actualIDs := make(map[uuid.UUID]bool)
-			for _, record := range records {
-				actualIDs[record.ID] = true
+			actualIDs := make(map[int64]bool)
+			for _, item := range items {
+				actualIDs[item.ID] = true
 			}
 
 			for _, expectedID := range tc.expectedIDs {
 				if !actualIDs[expectedID] {
-					t.Errorf("Expected record with ID %s not found in results", expectedID)
+					t.Errorf("Expected record with ID %d not found in results", expectedID)
 				}
 			}
 		})
@@ -1829,23 +2107,27 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 
 // TestGetGraphWithTagsFilter はタグフィルタでのヒートマップ生成のテスト
 func TestGetGraphWithTagsFilter(t *testing.T) {
-	mockStore := NewMockRecordStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	projectName := "test-project"
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
 
 	// 異なるタグを持つレコードを作成
-	record1, _ := model.NewRecord(baseTime, projectName, 5, []string{"work"})
-	record2, _ := model.NewRecord(baseTime.Add(24*time.Hour), projectName, 3, []string{"personal"})
-	record3, _ := model.NewRecord(baseTime.Add(48*time.Hour), projectName, 7, []string{"work"})
+	record1, _ := model.NewRecord(baseTime, projectID, 5, []string{"work"})
+	record2, _ := model.NewRecord(baseTime.Add(24*time.Hour), projectID, 3, []string{"personal"})
+	record3, _ := model.NewRecord(baseTime.Add(48*time.Hour), projectID, 7, []string{"work"})
 
 	mockStore.CreateRecord(context.Background(), record1)
 	mockStore.CreateRecord(context.Background(), record2)
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// workタグでフィルタしたヒートマップ生成
-	url := fmt.Sprintf("/p/%s/graph.svg?tags=work", projectName)
+	url := fmt.Sprintf("/p/%d/graph.svg?tags=work", projectID)
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -1875,7 +2157,7 @@ func TestGetGraphWithTagsFilter(t *testing.T) {
 // TestCreateProjectEndpoint はプロジェクト作成エンドポイントをテストします。
 func TestCreateProjectEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テストデータ
@@ -1925,48 +2207,19 @@ func TestCreateProjectEndpoint(t *testing.T) {
 	}
 }
 
-// TestCreateDuplicateProjectEndpoint は重複プロジェクト作成エンドポイントをテストします。
-func TestCreateDuplicateProjectEndpoint(t *testing.T) {
-	// モックストアの準備
-	mockStore := NewMockCombinedStore()
-	server := NewServer(mockStore, newTestConfig())
-
-	// 最初のプロジェクトを作成
-	project, _ := model.NewProject("duplicate", "First project")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project)
-
-	// 同じ名前のプロジェクトを作成しようとする
-	projectData := map[string]any{
-		"name":        "duplicate",
-		"description": "Second project",
-	}
-
-	requestBody, _ := json.Marshal(projectData)
-	req, _ := http.NewRequest("POST", "/api/v0/p", bytes.NewBuffer(requestBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIKey)
-
-	w := httptest.NewRecorder()
-	server.ServeHTTP(w, req)
-
-	// Conflictステータスコードを期待
-	if w.Code != http.StatusConflict {
-		t.Errorf("Expected status %d, got %d", http.StatusConflict, w.Code)
-	}
-}
-
 // TestGetProjectEndpoint はプロジェクト取得エンドポイントをテストします。
 func TestGetProjectEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用プロジェクトを作成
 	project, _ := model.NewProject("test-project", "Test description")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", "/api/v0/p/test-project", nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -1996,11 +2249,12 @@ func TestGetProjectEndpoint(t *testing.T) {
 // TestGetNonExistentProjectEndpoint は存在しないプロジェクト取得エンドポイントをテストします。
 func TestGetNonExistentProjectEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", "/api/v0/p/non-existent", nil)
+	// HTTPリクエストを作成 - 存在しないプロジェクトID
+	nonExistentID := int64(9999)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2015,12 +2269,13 @@ func TestGetNonExistentProjectEndpoint(t *testing.T) {
 // TestUpdateProjectEndpoint はプロジェクト更新エンドポイントをテストします。
 func TestUpdateProjectEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用プロジェクトを作成
 	project, _ := model.NewProject("update-test", "Original description")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// 更新データ
 	updateData := map[string]any{
@@ -2028,7 +2283,7 @@ func TestUpdateProjectEndpoint(t *testing.T) {
 	}
 
 	requestBody, _ := json.Marshal(updateData)
-	req, _ := http.NewRequest("PUT", "/api/v0/p/update-test", bytes.NewBuffer(requestBody))
+	req, _ := http.NewRequest("PUT", fmt.Sprintf("/api/v0/p/%d", projectID), bytes.NewBuffer(requestBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -2056,14 +2311,14 @@ func TestUpdateProjectEndpoint(t *testing.T) {
 // TestListProjectsEndpoint はプロジェクト一覧取得エンドポイントをテストします。
 func TestListProjectsEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用プロジェクトを複数作成
 	project1, _ := model.NewProject("project-1", "Project 1")
 	project2, _ := model.NewProject("project-2", "Project 2")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project1)
-	mockStore.MockProjectStore.CreateProject(context.Background(), project2)
+	mockStore.CreateProject(context.Background(), project1)
+	mockStore.CreateProject(context.Background(), project2)
 
 	// HTTPリクエストを作成
 	req, _ := http.NewRequest("GET", "/api/v0/p", nil)
@@ -2085,26 +2340,27 @@ func TestListProjectsEndpoint(t *testing.T) {
 	}
 
 	// プロジェクト数をチェック
-	if len(response.Result) != 2 {
-		t.Errorf("Expected 2 projects, got %d", len(response.Result))
+	if len(response.Items) != 2 {
+		t.Errorf("Expected 2 projects, got %d", len(response.Items))
 	}
 }
 
 // TestDeleteProjectEndpoint はプロジェクト削除エンドポイントをテストします。
 func TestDeleteProjectEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用プロジェクトとレコードを作成
 	project, _ := model.NewProject("delete-test", "Test project")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
-	record, _ := model.NewRecord(time.Now(), "delete-test", 1, []string{})
-	mockStore.MockRecordStore.CreateRecord(context.Background(), record)
+	record, _ := model.NewRecord(time.Now(), projectID, 1, []string{})
+	mockStore.CreateRecord(context.Background(), record)
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("DELETE", "/api/v0/p/delete-test", nil)
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("/api/v0/p/%d", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2117,8 +2373,8 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 
 	// レコードが削除されたことを確認
 	pagination, _ := model.NewPagination("100", "")
-	records, _ := mockStore.MockRecordStore.ListRecords(context.Background(), &store.ListRecordsParams{
-		Project:    "delete-test",
+	records, _ := mockStore.ListRecords(context.Background(), &store.ListRecordsParams{
+		ProjectID:  projectID,
 		From:       time.Now().Add(-24 * time.Hour),
 		To:         time.Now().Add(24 * time.Hour),
 		Pagination: pagination,
@@ -2132,25 +2388,26 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 // TestGetProjectTagsEndpoint はプロジェクトタグ取得エンドポイントをテストします。
 func TestGetProjectTagsEndpoint(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用プロジェクトを作成
 	project, _ := model.NewProject("test-project", "Test project")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// 異なるタグを持つレコードを作成
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
-	record1, _ := model.NewRecord(baseTime, "test-project", 1, []string{"work", "important"})
-	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), "test-project", 2, []string{"personal", "urgent"})
-	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), "test-project", 3, []string{"work", "meeting"})
+	record1, _ := model.NewRecord(baseTime, projectID, 1, []string{"work", "important"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectID, 2, []string{"personal", "urgent"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), projectID, 3, []string{"work", "meeting"})
 
-	mockStore.MockRecordStore.CreateRecord(context.Background(), record1)
-	mockStore.MockRecordStore.CreateRecord(context.Background(), record2)
-	mockStore.MockRecordStore.CreateRecord(context.Background(), record3)
+	mockStore.CreateRecord(context.Background(), record1)
+	mockStore.CreateRecord(context.Background(), record2)
+	mockStore.CreateRecord(context.Background(), record3)
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", "/api/v0/p/test-project/t", nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d/t", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2193,11 +2450,12 @@ func TestGetProjectTagsEndpoint(t *testing.T) {
 // TestGetProjectTagsNonExistentProject は存在しないプロジェクトのタグ取得エンドポイントをテストします。
 func TestGetProjectTagsNonExistentProject(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", "/api/v0/p/non-existent/t", nil)
+	// HTTPリクエストを作成 - 存在しないプロジェクトID
+	nonExistentID := int64(9999)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d/t", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2212,15 +2470,16 @@ func TestGetProjectTagsNonExistentProject(t *testing.T) {
 // TestGetProjectTagsEmptyProject はタグを持たないプロジェクトのタグ取得エンドポイントをテストします。
 func TestGetProjectTagsEmptyProject(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用プロジェクトを作成（レコードなし）
 	project, _ := model.NewProject("empty-project", "Empty project")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", "/api/v0/p/empty-project/t", nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d/t", projectID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2246,7 +2505,7 @@ func TestGetProjectTagsEmptyProject(t *testing.T) {
 
 func TestListProjectsWithPagination(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用に5件のプロジェクトを作成
@@ -2255,7 +2514,7 @@ func TestListProjectsWithPagination(t *testing.T) {
 		projectName := fmt.Sprintf("project-%d", i)
 		description := fmt.Sprintf("Project %d", i)
 		project, _ := model.NewProject(projectName, description)
-		mockStore.MockProjectStore.CreateProject(context.Background(), project)
+		mockStore.CreateProject(context.Background(), project)
 		allProjects = append(allProjects, project)
 	}
 
@@ -2277,15 +2536,13 @@ func TestListProjectsWithPagination(t *testing.T) {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(response.Result) != 2 {
-			t.Errorf("Expected 2 projects, got %d", len(response.Result))
+		if len(response.Items) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(response.Items))
 		}
 
 		// 次ページが存在することを確認
-		if response.Next == nil {
-			t.Error("Expected next page URL, got nil")
-		} else if !strings.Contains(*response.Next, "cursor=") {
-			t.Errorf("Expected next URL to contain cursor parameter, got: %s", *response.Next)
+		if response.Cursor == nil {
+			t.Error("Expected cursor, got nil")
 		}
 	})
 
@@ -2301,12 +2558,13 @@ func TestListProjectsWithPagination(t *testing.T) {
 		var firstResponse ListProjectsResponse
 		json.NewDecoder(firstW.Body).Decode(&firstResponse)
 
-		if firstResponse.Next == nil {
-			t.Fatal("Expected next page URL in first response")
+		if firstResponse.Cursor == nil {
+			t.Fatal("Expected cursor in first response")
 		}
 
 		// 次ページを取得
-		req := httptest.NewRequest(http.MethodGet, *firstResponse.Next, nil)
+		secondPageURL := fmt.Sprintf("/api/v0/p?limit=2&cursor=%s", *firstResponse.Cursor)
+		req := httptest.NewRequest(http.MethodGet, secondPageURL, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
 		server.ServeHTTP(w, req)
@@ -2321,13 +2579,13 @@ func TestListProjectsWithPagination(t *testing.T) {
 			t.Fatalf("Failed to decode response body: %v", err)
 		}
 
-		if len(response.Result) != 2 {
-			t.Errorf("Expected 2 projects, got %d", len(response.Result))
+		if len(response.Items) != 2 {
+			t.Errorf("Expected 2 projects, got %d", len(response.Items))
 		}
 
 		// 次ページが存在することを確認
-		if response.Next == nil {
-			t.Error("Expected next page URL, got nil")
+		if response.Cursor == nil {
+			t.Error("Expected cursor, got nil")
 		}
 	})
 
@@ -2350,13 +2608,13 @@ func TestListProjectsWithPagination(t *testing.T) {
 		}
 
 		// 全5件が返される
-		if len(response.Result) != 5 {
-			t.Errorf("Expected 5 projects, got %d", len(response.Result))
+		if len(response.Items) != 5 {
+			t.Errorf("Expected 5 projects, got %d", len(response.Items))
 		}
 
 		// 次ページは存在しない
-		if response.Next != nil {
-			t.Errorf("Expected no next page URL, got: %s", *response.Next)
+		if response.Cursor != nil {
+			t.Errorf("Expected no cursor, got: %s", *response.Cursor)
 		}
 	})
 
@@ -2379,13 +2637,13 @@ func TestListProjectsWithPagination(t *testing.T) {
 		}
 
 		// デフォルトのlimitは100なので、5件すべて返される
-		if len(response.Result) != 5 {
-			t.Errorf("Expected 5 projects, got %d", len(response.Result))
+		if len(response.Items) != 5 {
+			t.Errorf("Expected 5 projects, got %d", len(response.Items))
 		}
 
 		// 次ページは存在しない
-		if response.Next != nil {
-			t.Errorf("Expected no next page URL, got: %s", *response.Next)
+		if response.Cursor != nil {
+			t.Errorf("Expected no cursor, got: %s", *response.Cursor)
 		}
 	})
 }
@@ -2393,12 +2651,12 @@ func TestListProjectsWithPagination(t *testing.T) {
 // TestListProjectsWithInvalidPaginationParams tests project pagination with invalid parameters
 func TestListProjectsWithInvalidPaginationParams(t *testing.T) {
 	// モックストアの準備
-	mockStore := NewMockCombinedStore()
+	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
 	// テスト用にプロジェクトを1件作成
 	project, _ := model.NewProject("test-project", "Test project")
-	mockStore.MockProjectStore.CreateProject(context.Background(), project)
+	mockStore.CreateProject(context.Background(), project)
 
 	// ケース1: 無効なlimit（非数値）
 	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {

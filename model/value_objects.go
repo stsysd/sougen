@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // ProjectName represents a project name value object.
@@ -156,30 +154,6 @@ func (t *Tags) IsEmpty() bool {
 	return len(t.values) == 0
 }
 
-// RecordID represents a record ID value object.
-type RecordID struct {
-	value uuid.UUID
-}
-
-// NewRecordID creates a new record ID value object.
-func NewRecordID(idStr string) (*RecordID, error) {
-	if idStr == "" {
-		return nil, fmt.Errorf("record ID is required")
-	}
-
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid UUID format")
-	}
-
-	return &RecordID{value: id}, nil
-}
-
-// UUID returns the UUID value.
-func (r *RecordID) UUID() uuid.UUID {
-	return r.value
-}
-
 // Timestamp represents a timestamp value object.
 type Timestamp struct {
 	value time.Time
@@ -231,10 +205,10 @@ func (v *Value) Int() int {
 
 // RecordFilterParams represents filter parameters for record queries.
 type RecordFilterParams struct {
-	Project string   `json:"project"`        // Project name for filtering
-	From    string   `json:"from"`           // Start date for filtering (RFC3339)
-	To      string   `json:"to"`             // End date for filtering (RFC3339)
-	Tags    []string `json:"tags,omitempty"` // Tags for filtering
+	ProjectID int64    `json:"project_id"`     // Project ID for filtering
+	From      string   `json:"from"`           // Start date for filtering (RFC3339)
+	To        string   `json:"to"`             // End date for filtering (RFC3339)
+	Tags      []string `json:"tags,omitempty"` // Tags for filtering
 }
 
 // RecordCursor represents a keyset cursor for record pagination.
@@ -242,7 +216,7 @@ type RecordFilterParams struct {
 type RecordCursor struct {
 	RecordFilterParams        // Embedded filter parameters
 	Timestamp          string `json:"timestamp"` // RFC3339 formatted timestamp of the last record
-	ID                 string `json:"id"`        // UUID of the last record
+	ID                 int64  `json:"id"`        // ID of the last record
 }
 
 // ProjectCursor represents a keyset cursor for project pagination.
@@ -252,7 +226,7 @@ type ProjectCursor struct {
 }
 
 // EncodeRecordCursor encodes a record cursor to a Base64 string.
-func EncodeRecordCursor(timestamp time.Time, id, project string, from, to time.Time, tags []string) string {
+func EncodeRecordCursor(timestamp time.Time, id int64, projectID int64, from, to time.Time, tags []string) string {
 	// Convert zero-value times to empty strings
 	fromStr := ""
 	if !from.IsZero() {
@@ -265,10 +239,10 @@ func EncodeRecordCursor(timestamp time.Time, id, project string, from, to time.T
 
 	cursor := RecordCursor{
 		RecordFilterParams: RecordFilterParams{
-			Project: project,
-			From:    fromStr,
-			To:      toStr,
-			Tags:    tags,
+			ProjectID: projectID,
+			From:      fromStr,
+			To:        toStr,
+			Tags:      tags,
 		},
 		Timestamp: timestamp.Format(time.RFC3339),
 		ID:        id,
