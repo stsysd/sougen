@@ -106,6 +106,12 @@ func NewSQLiteStore(dataDir string, migrationFunc MigrationFunc) (*SQLiteStore, 
 		return nil, fmt.Errorf("failed to connect to SQLite database: %w", err)
 	}
 
+	// 外部キー制約を有効化
+	if _, err := conn.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
 	// マイグレーションの実行（指定されている場合）
 	if migrationFunc != nil {
 		if err := migrationFunc(conn); err != nil {
