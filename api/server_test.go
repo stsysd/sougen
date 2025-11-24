@@ -229,13 +229,6 @@ func (m *MockStore) DeleteRecordsUntil(ctx context.Context, projectID int64, unt
 }
 
 func (m *MockStore) CreateProject(ctx context.Context, project *model.Project) error {
-	// 名前の重複チェック
-	for _, p := range m.projects {
-		if p.Name == project.Name {
-			return errors.New("UNIQUE constraint failed")
-		}
-	}
-
 	// IDを自動生成
 	project.ID = int64(len(m.projects) + 1)
 	m.projects[project.ID] = project
@@ -2211,36 +2204,6 @@ func TestCreateProjectEndpoint(t *testing.T) {
 	}
 	if createdProject.Description != "Test project description" {
 		t.Errorf("Expected description 'Test project description', got %s", createdProject.Description)
-	}
-}
-
-// TestCreateDuplicateProjectEndpoint は重複プロジェクト作成エンドポイントをテストします。
-func TestCreateDuplicateProjectEndpoint(t *testing.T) {
-	// モックストアの準備
-	mockStore := NewMockStore()
-	server := NewServer(mockStore, newTestConfig())
-
-	// 最初のプロジェクトを作成
-	project, _ := model.NewProject("duplicate", "First project")
-	mockStore.CreateProject(context.Background(), project)
-
-	// 同じ名前のプロジェクトを作成しようとする
-	projectData := map[string]any{
-		"name":        "duplicate",
-		"description": "Second project",
-	}
-
-	requestBody, _ := json.Marshal(projectData)
-	req, _ := http.NewRequest("POST", "/api/v0/p", bytes.NewBuffer(requestBody))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testAPIKey)
-
-	w := httptest.NewRecorder()
-	server.ServeHTTP(w, req)
-
-	// Conflictステータスコードを期待
-	if w.Code != http.StatusConflict {
-		t.Errorf("Expected status %d, got %d", http.StatusConflict, w.Code)
 	}
 }
 

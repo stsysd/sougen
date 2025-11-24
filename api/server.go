@@ -836,11 +836,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 	// データベースに保存
 	if err := s.store.CreateProject(r.Context(), project); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			http.Error(w, fmt.Sprintf("Project '%s' already exists", project.Name), http.StatusConflict)
-		} else {
-			http.Error(w, fmt.Sprintf("Failed to create project: %v", err), http.StatusInternalServerError)
-		}
+		http.Error(w, fmt.Sprintf("Failed to create project: %v", err), http.StatusInternalServerError)
 		return
 	}
 
