@@ -13,8 +13,8 @@ func main() {
 	// 設定の読み込み
 	cfg := config.NewConfig()
 
-	// SQLiteストアの初期化
-	sqliteStore, err := store.NewSQLiteStore(cfg.DataDir)
+	// SQLiteストアの初期化（マイグレーション関数を渡す）
+	sqliteStore, err := store.NewSQLiteStore(cfg.DataDir, runMigrations)
 	if err != nil {
 		log.Fatalf("Failed to initialize SQLite store: %v", err)
 	}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"slices"
 	"strings"
@@ -11,6 +12,54 @@ import (
 	"github.com/stsysd/sougen/model"
 )
 
+// testMigration はテスト用のシンプルなマイグレーション関数です。
+func testMigration(conn *sql.DB) error {
+	// 外部キー制約を有効化
+	_, err := conn.Exec(`PRAGMA foreign_keys = ON;`)
+	if err != nil {
+		return err
+	}
+
+	// テーブルの作成
+	_, err = conn.Exec(`
+		-- Projects table
+		CREATE TABLE IF NOT EXISTS projects (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+
+		-- Records table
+		CREATE TABLE IF NOT EXISTS records (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id INTEGER NOT NULL,
+			value INTEGER NOT NULL,
+			timestamp TEXT NOT NULL,
+			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+		);
+
+		-- Tags table
+		CREATE TABLE IF NOT EXISTS tags (
+			record_id INTEGER NOT NULL,
+			tag TEXT NOT NULL,
+			PRIMARY KEY (record_id, tag),
+			FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+		);
+
+		-- Indexes
+		CREATE INDEX IF NOT EXISTS idx_records_project_id_timestamp
+		ON records(project_id, timestamp);
+
+		CREATE INDEX IF NOT EXISTS idx_tags_record_id ON tags(record_id);
+		CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+		CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
+		CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
+	`)
+	return err
+}
+
 func setupTestStore(t *testing.T) (*SQLiteStore, func()) {
 	// テスト用の一時ディレクトリを作成
 	tempDir, err := os.MkdirTemp("", "sougen-test")
@@ -19,7 +68,7 @@ func setupTestStore(t *testing.T) (*SQLiteStore, func()) {
 	}
 
 	// テスト用のSQLiteストアを初期化
-	store, err := NewSQLiteStore(tempDir)
+	store, err := NewSQLiteStore(tempDir, testMigration)
 	if err != nil {
 		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to create test store: %v", err)

@@ -86,8 +86,12 @@ type SQLiteStore struct {
 	queries *db.Queries
 }
 
+// MigrationFunc はデータベースマイグレーションを実行する関数の型です。
+type MigrationFunc func(*sql.DB) error
+
 // NewSQLiteStore は新しいSQLiteStoreを作成します。
-func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
+// migrationFunc が nil でない場合、データベース接続後にマイグレーションを実行します。
+func NewSQLiteStore(dataDir string, migrationFunc MigrationFunc) (*SQLiteStore, error) {
 	// データディレクトリの作成（存在しない場合）
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
@@ -102,66 +106,24 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("failed to connect to SQLite database: %w", err)
 	}
 
-	// テーブルの初期化
-	if err := initTables(conn); err != nil {
+	// 外部キー制約を有効化
+	if _, err := conn.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("failed to initialize database tables: %w", err)
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
+	// マイグレーションの実行（指定されている場合）
+	if migrationFunc != nil {
+		if err := migrationFunc(conn); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("failed to run database migrations: %w", err)
+		}
 	}
 
 	return &SQLiteStore{
 		conn:    conn,
 		queries: db.New(conn),
 	}, nil
-}
-
-// initTables はデータベーステーブルを初期化します。
-// Note: スキーマ定義はgooseマイグレーションに移行しました。
-// この関数は既存のDBとの互換性のために残していますが、新規DBの場合はgooseを使用してください。
-func initTables(conn *sql.DB) error {
-	// 外部キー制約を有効化
-	_, err := conn.Exec(`PRAGMA foreign_keys = ON;`)
-	if err != nil {
-		return err
-	}
-
-	// テーブルの作成
-	_, err = conn.Exec(`
-		-- Projects table
-		CREATE TABLE IF NOT EXISTS projects (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE,
-			description TEXT NOT NULL DEFAULT '',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
-
-		-- Records table
-		CREATE TABLE IF NOT EXISTS records (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_id INTEGER NOT NULL,
-			value INTEGER NOT NULL,
-			timestamp TEXT NOT NULL,
-			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-		);
-
-		-- Tags table
-		CREATE TABLE IF NOT EXISTS tags (
-			record_id INTEGER NOT NULL,
-			tag TEXT NOT NULL,
-			PRIMARY KEY (record_id, tag),
-			FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
-		);
-
-		-- Indexes
-		CREATE INDEX IF NOT EXISTS idx_records_project_id_timestamp
-		ON records(project_id, timestamp);
-
-		CREATE INDEX IF NOT EXISTS idx_tags_record_id ON tags(record_id);
-		CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
-		CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
-		CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
-	`)
-	return err
 }
 
 // CreateRecord は新しいレコードをデータベースに保存します。
