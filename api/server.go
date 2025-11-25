@@ -642,6 +642,10 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	response := &ListRecordsResponse{
 		Items: records,
 	}
+	// 空配列を返すためにnilチェック
+	if response.Items == nil {
+		response.Items = []*model.Record{}
+	}
 
 	// 次ページのカーソルを生成
 	if len(records) > originalLimit {
@@ -785,6 +789,10 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	// レスポンスの構築
 	response := &ListProjectsResponse{
 		Items: projects,
+	}
+	// 空配列を返すためにnilチェック
+	if response.Items == nil {
+		response.Items = []*model.Project{}
 	}
 
 	// 次ページのカーソルを生成

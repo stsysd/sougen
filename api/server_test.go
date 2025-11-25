@@ -2714,3 +2714,75 @@ func TestListProjectsWithInvalidPaginationParams(t *testing.T) {
 		}
 	})
 }
+
+// TestListRecordsEmptyResponse tests that empty record list returns [] instead of null
+func TestListRecordsEmptyResponse(t *testing.T) {
+	// 空のモックストアを準備
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクトIDを指定してリクエスト（レコードは存在しない）
+	projectID := int64(1)
+	url := fmt.Sprintf("/api/v0/r?project_id=%d", projectID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードの確認
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// レスポンスボディのパース
+	var response ListRecordsResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	// items フィールドが null でないことを確認
+	if response.Items == nil {
+		t.Error("items field is null, expected empty array")
+	}
+
+	// items が空配列であることを確認
+	if len(response.Items) != 0 {
+		t.Errorf("Expected empty array, got %d items", len(response.Items))
+	}
+}
+
+// TestListProjectsEmptyResponse tests that empty project list returns [] instead of null
+func TestListProjectsEmptyResponse(t *testing.T) {
+	// 空のモックストアを準備
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// プロジェクト一覧をリクエスト（プロジェクトは存在しない）
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/p", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// ステータスコードの確認
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// レスポンスボディのパース
+	var response ListProjectsResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	// items フィールドが null でないことを確認
+	if response.Items == nil {
+		t.Error("items field is null, expected empty array")
+	}
+
+	// items が空配列であることを確認
+	if len(response.Items) != 0 {
+		t.Errorf("Expected empty array, got %d items", len(response.Items))
+	}
+}
