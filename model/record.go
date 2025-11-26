@@ -67,7 +67,7 @@ func (r *Record) Validate() error {
 	}
 
 	// プロジェクトIDの検証
-	if !r.ProjectID.IsValid() || r.ProjectID.ToInt64() <= 0 {
+	if !r.ProjectID.IsValid() {
 		return errors.New("project_id is required")
 	}
 

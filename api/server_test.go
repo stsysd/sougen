@@ -686,8 +686,8 @@ func TestGetNonExistentRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// 存在しないIDでリクエスト
-	nonExistentID := int64(9999)
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%016x", nonExistentID), nil)
+	nonExistentID := model.NewHexID(9999)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%s", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -707,11 +707,11 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	mockStore := NewMockStore()
 
 	// プロジェクト
-	projectID := int64(42)
+	projectID := model.NewHexID(42)
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, model.NewHexID(projectID), 1, nil)
+	testRecord, err := model.NewRecord(timestamp, projectID, 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -747,8 +747,8 @@ func TestDeleteNonExistentRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// 存在しないIDでリクエスト
-	nonExistentID := int64(9999)
-	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%016x", nonExistentID), nil)
+	nonExistentID := model.NewHexID(9999)
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%s", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -1004,13 +1004,13 @@ func TestUpdateNonExistentRecord(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// 存在しないrecord_idで更新を試みる
-	nonExistentID := int64(9999)
+	nonExistentID := model.NewHexID(9999)
 	updateData := map[string]any{
 		"value": 10,
 	}
 	reqBytes, _ := json.Marshal(updateData)
 
-	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", nonExistentID), bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%s", nonExistentID), bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -1273,24 +1273,24 @@ func TestListRecordsEndpoint(t *testing.T) {
 	t.Logf("Response records: %+v", items)
 
 	// recordsMap は検証のためにIDベースでレコードにアクセスできるマップ
-	recordsMap := make(map[int64]*model.Record)
+	recordsMap := make(map[model.HexID]*model.Record)
 	for _, r := range items {
-		recordsMap[r.ID.ToInt64()] = r
+		recordsMap[r.ID] = r
 	}
 
 	// 期待されるレコードが含まれているか確認
-	if _, ok := recordsMap[record1.ID.ToInt64()]; !ok {
+	if _, ok := recordsMap[record1.ID]; !ok {
 		t.Errorf("Record 1 missing from response")
 	}
-	if _, ok := recordsMap[record2.ID.ToInt64()]; !ok {
+	if _, ok := recordsMap[record2.ID]; !ok {
 		t.Errorf("Record 2 missing from response")
 	}
-	if _, ok := recordsMap[record3.ID.ToInt64()]; !ok {
+	if _, ok := recordsMap[record3.ID]; !ok {
 		t.Errorf("Record 3 missing from response")
 	}
 
 	// 別のプロジェクトのレコードが含まれていないことを確認
-	if _, ok := recordsMap[record4.ID.ToInt64()]; ok {
+	if _, ok := recordsMap[record4.ID]; ok {
 		t.Errorf("Record 4 from another project should not be included")
 	}
 }
@@ -1444,16 +1444,16 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	projectID := int64(42)
+	projectID := model.NewHexID(42)
 
 	// テスト用にレコードを1件作成
 	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-	record, _ := model.NewRecord(baseTime, model.NewHexID(projectID), 1, nil)
+	record, _ := model.NewRecord(baseTime, projectID, 1, nil)
 	mockStore.CreateRecord(context.Background(), record)
 
 	// ケース1: 無効なlimit（非数値）
 	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/r?limit=abc&project_id=%016x", projectID)
+		url := fmt.Sprintf("/api/v0/r?limit=abc&project_id=%s", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1466,7 +1466,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 
 	// ケース2: 無効なlimit（負の数）
 	t.Run("Invalid limit (negative)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/r?limit=-10&project_id=%016x", projectID)
+		url := fmt.Sprintf("/api/v0/r?limit=-10&project_id=%s", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1479,7 +1479,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 
 	// ケース3: 無効なlimit（ゼロ）
 	t.Run("Invalid limit (zero)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/r?limit=0&project_id=%016x", projectID)
+		url := fmt.Sprintf("/api/v0/r?limit=0&project_id=%s", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1495,7 +1495,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 		// Base64エンコードされていない不正な形式のcursorを渡す
 		// 新しい実装では、API層でcursorをデコードするため、
 		// 不正な形式の場合は400 BadRequestが返される
-		url := fmt.Sprintf("/api/v0/r?cursor=non-existent-id&project_id=%016x", projectID)
+		url := fmt.Sprintf("/api/v0/r?cursor=non-existent-id&project_id=%s", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1522,20 +1522,20 @@ func TestDeleteProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec1.ID.ToInt64()] = rec1
+  mockStore.CreateRecord(context.Background(), rec1)
 
 	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), projectID, 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec2.ID.ToInt64()] = rec2
+  mockStore.CreateRecord(context.Background(), rec2)
 
 	// 別プロジェクトのレコードも追加
 	rec3, err := model.NewRecord(timestamp, model.NewHexID(43), 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec3.ID.ToInt64()] = rec3
+  mockStore.CreateRecord(context.Background(), rec3)
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -1579,8 +1579,8 @@ func TestDeleteNonExistentProject(t *testing.T) {
 	server := NewServer(store, newTestConfig())
 
 	// テスト対象のエンドポイントを呼び出す - 存在しないプロジェクトID
-	nonExistentID := int64(99999)
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/v0/p/%d", nonExistentID), nil)
+	nonExistentID := model.NewHexID(99999)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/v0/p/%s", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1879,14 +1879,14 @@ func TestBulkDeleteRecordsWithInvalidParams(t *testing.T) {
 		{
 			name: "until パラメータ不足",
 			reqBody: map[string]any{
-				"project_id": int64(42),
+				"project_id": model.NewHexID(42),
 			},
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "不正な until フォーマット",
 			reqBody: map[string]any{
-				"project_id": int64(42),
+				"project_id": model.NewHexID(42),
 				"until":      "invalid-date",
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -2015,14 +2015,14 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 	mockStore := NewMockStore()
 	server := NewServer(mockStore, newTestConfig())
 
-	projectID := int64(42)
+	projectID := model.NewHexID(42)
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
 
 	// 異なるタグを持つレコードを作成
-	record1, _ := model.NewRecord(baseTime, model.NewHexID(projectID), 1, []string{"work", "urgent"})
-	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), model.NewHexID(projectID), 2, []string{"personal", "hobby"})
-	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), model.NewHexID(projectID), 3, []string{"work", "meeting"})
-	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), model.NewHexID(projectID), 4, []string{"personal", "urgent"})
+	record1, _ := model.NewRecord(baseTime, projectID, 1, []string{"work", "urgent"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectID, 2, []string{"personal", "hobby"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), projectID, 3, []string{"work", "meeting"})
+	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), projectID, 4, []string{"personal", "urgent"})
 
 	mockStore.CreateRecord(context.Background(), record1)
 	mockStore.CreateRecord(context.Background(), record2)
@@ -2032,44 +2032,44 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 	tests := []struct {
 		name          string
 		tagsFilter    string
-		expectedIDs   []int64
+		expectedIDs   []model.HexID
 		expectedCount int
 	}{
 		{
 			name:          "Filter by work tag",
 			tagsFilter:    "work",
-			expectedIDs:   []int64{record1.ID.ToInt64(), record3.ID.ToInt64()},
+			expectedIDs:   []model.HexID{record1.ID, record3.ID},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by personal tag",
 			tagsFilter:    "personal",
-			expectedIDs:   []int64{record2.ID.ToInt64(), record4.ID.ToInt64()},
+			expectedIDs:   []model.HexID{record2.ID, record4.ID},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by urgent tag (OR)",
 			tagsFilter:    "urgent",
-			expectedIDs:   []int64{record1.ID.ToInt64(), record4.ID.ToInt64()},
+			expectedIDs:   []model.HexID{record1.ID, record4.ID},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by multiple tags (OR)",
 			tagsFilter:    "work,hobby",
-			expectedIDs:   []int64{record1.ID.ToInt64(), record2.ID.ToInt64(), record3.ID.ToInt64()},
+			expectedIDs:   []model.HexID{record1.ID, record2.ID, record3.ID},
 			expectedCount: 3,
 		},
 		{
 			name:          "Filter by non-existent tag",
 			tagsFilter:    "nonexistent",
-			expectedIDs:   []int64{},
+			expectedIDs:   []model.HexID{},
 			expectedCount: 0,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			url := fmt.Sprintf("/api/v0/r?project_id=%016x&tags=%s", projectID, tc.tagsFilter)
+			url := fmt.Sprintf("/api/v0/r?project_id=%s&tags=%s", projectID, tc.tagsFilter)
 			req := httptest.NewRequest(http.MethodGet, url, nil)
 			req.Header.Set("X-API-Key", testAPIKey)
 
@@ -2091,9 +2091,9 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 			}
 
 			// IDが期待されるものと一致するかチェック
-			actualIDs := make(map[int64]bool)
+			actualIDs := make(map[model.HexID]bool)
 			for _, item := range items {
-				actualIDs[item.ID.ToInt64()] = true
+				actualIDs[item.ID] = true
 			}
 
 			for _, expectedID := range tc.expectedIDs {
@@ -2253,8 +2253,8 @@ func TestGetNonExistentProjectEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// HTTPリクエストを作成 - 存在しないプロジェクトID
-	nonExistentID := int64(9999)
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d", nonExistentID), nil)
+	nonExistentID := model.NewHexID(99999)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%s", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2454,8 +2454,8 @@ func TestGetProjectTagsNonExistentProject(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// HTTPリクエストを作成 - 存在しないプロジェクトID
-	nonExistentID := int64(9999)
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d/t", nonExistentID), nil)
+	nonExistentID := model.NewHexID(9999)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%s/t", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2722,8 +2722,8 @@ func TestListRecordsEmptyResponse(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// プロジェクトIDを指定してリクエスト（レコードは存在しない）
-	projectID := int64(1)
-	url := fmt.Sprintf("/api/v0/r?project_id=%016x", projectID)
+	projectID := model.NewHexID(1)
+	url := fmt.Sprintf("/api/v0/r?project_id=%s", projectID)
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 

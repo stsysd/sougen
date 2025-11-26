@@ -29,7 +29,7 @@ func TestNewRecord(t *testing.T) {
 	}
 
 	if !record.ProjectID.Equals(projectID) {
-		t.Errorf("Expected ProjectID to be %d, got %d", projectID.ToInt64(), record.ProjectID.ToInt64())
+		t.Errorf("Expected ProjectID to be %s, got %s", projectID, record.ProjectID)
 	}
 
 	if record.Value != value {

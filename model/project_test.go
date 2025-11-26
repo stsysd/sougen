@@ -68,7 +68,7 @@ func TestLoadProject(t *testing.T) {
 
 	// IDフィールドが正しく設定されているか確認
 	if !project.ID.Equals(id) {
-		t.Errorf("Expected ID %d, got %d", id.ToInt64(), project.ID.ToInt64())
+		t.Errorf("Expected ID %s, got %s", id, project.ID)
 	}
 
 	// Nameフィールドが正しく設定されているか確認
