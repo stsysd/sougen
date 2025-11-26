@@ -5,9 +5,98 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// HexID represents an ID that is serialized as a 16-digit zero-padded hex string.
+// The zero value (valid=false) represents an uninitialized or invalid ID.
+type HexID struct {
+	value int64
+	valid bool
+}
+
+// ParseHexID parses a 16-digit hex string and returns a HexID.
+func ParseHexID(hexStr string) (HexID, error) {
+	id, err := strconv.ParseInt(hexStr, 16, 64)
+	if err != nil {
+		return HexID{}, fmt.Errorf("invalid hex id format: %w", err)
+	}
+	return NewHexID(id), nil
+}
+
+// NewHexID creates a valid HexID from an int64 value.
+func NewHexID(id int64) HexID {
+	return HexID{value: id, valid: true}
+}
+
+// ToInt64 returns the internal int64 value.
+// Returns 0 if the HexID is invalid.
+func (h HexID) ToInt64() int64 {
+	if !h.valid {
+		return 0
+	}
+	return h.value
+}
+
+// String returns the HexID as a 16-digit zero-padded hex string.
+func (h HexID) String() string {
+	if !h.valid {
+		return ""
+	}
+	return fmt.Sprintf("%016x", h.value)
+}
+
+// IsValid returns true if the HexID has been properly initialized.
+func (h HexID) IsValid() bool {
+	return h.valid
+}
+
+// Equals returns true if two HexIDs are equal.
+func (h HexID) Equals(other HexID) bool {
+	if !h.valid && !other.valid {
+		return true // Both invalid
+	}
+	if h.valid != other.valid {
+		return false // One valid, one invalid
+	}
+	return h.value == other.value
+}
+
+// MarshalJSON converts the HexID to a 16-digit zero-padded hex string for JSON.
+// Invalid HexIDs are marshaled as null.
+func (h HexID) MarshalJSON() ([]byte, error) {
+	if !h.valid {
+		return []byte("null"), nil
+	}
+	hexStr := fmt.Sprintf("%016x", h.value)
+	return json.Marshal(hexStr)
+}
+
+// UnmarshalJSON parses a hex string from JSON and converts it to HexID.
+func (h *HexID) UnmarshalJSON(data []byte) error {
+	// Handle null
+	if string(data) == "null" {
+		h.valid = false
+		h.value = 0
+		return nil
+	}
+
+	var hexStr string
+	if err := json.Unmarshal(data, &hexStr); err != nil {
+		return fmt.Errorf("hex id must be a string: %w", err)
+	}
+
+	id, err := strconv.ParseInt(hexStr, 16, 64)
+	if err != nil {
+		return fmt.Errorf("invalid hex id format: %w", err)
+	}
+
+	h.value = id
+	h.valid = true
+	return nil
+}
 
 // ProjectName represents a project name value object.
 type ProjectName struct {
@@ -205,7 +294,7 @@ func (v *Value) Int() int {
 
 // RecordFilterParams represents filter parameters for record queries.
 type RecordFilterParams struct {
-	ProjectID int64    `json:"project_id"`     // Project ID for filtering
+	ProjectID HexID    `json:"project_id"`     // Project ID for filtering
 	From      string   `json:"from"`           // Start date for filtering (RFC3339)
 	To        string   `json:"to"`             // End date for filtering (RFC3339)
 	Tags      []string `json:"tags,omitempty"` // Tags for filtering
@@ -216,7 +305,7 @@ type RecordFilterParams struct {
 type RecordCursor struct {
 	RecordFilterParams        // Embedded filter parameters
 	Timestamp          string `json:"timestamp"` // RFC3339 formatted timestamp of the last record
-	ID                 int64  `json:"id"`        // ID of the last record
+	ID                 HexID  `json:"id"`        // ID of the last record
 }
 
 // ProjectCursor represents a keyset cursor for project pagination.
@@ -226,7 +315,7 @@ type ProjectCursor struct {
 }
 
 // EncodeRecordCursor encodes a record cursor to a Base64 string.
-func EncodeRecordCursor(timestamp time.Time, id int64, projectID int64, from, to time.Time, tags []string) string {
+func EncodeRecordCursor(timestamp time.Time, id HexID, projectID HexID, from, to time.Time, tags []string) string {
 	// Convert zero-value times to empty strings
 	fromStr := ""
 	if !from.IsZero() {

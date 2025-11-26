@@ -117,16 +117,16 @@ func TestCreateAndGetRecord(t *testing.T) {
 	}
 
 	// 取得したレコードが元のレコードと一致することを確認
-	if retrievedRecord.ID != record.ID {
-		t.Errorf("Expected ID %d, got %d", record.ID, retrievedRecord.ID)
+	if !retrievedRecord.ID.Equals(record.ID) {
+		t.Errorf("Expected ID %s, got %s", record.ID, retrievedRecord.ID)
 	}
 
 	if !retrievedRecord.Timestamp.Equal(record.Timestamp) {
 		t.Errorf("Expected Timestamp %v, got %v", record.Timestamp, retrievedRecord.Timestamp)
 	}
 
-	if retrievedRecord.ProjectID != record.ProjectID {
-		t.Errorf("Expected ProjectID %d, got %d", record.ProjectID, retrievedRecord.ProjectID)
+	if !retrievedRecord.ProjectID.Equals(record.ProjectID) {
+		t.Errorf("Expected ProjectID %s, got %s", record.ProjectID, retrievedRecord.ProjectID)
 	}
 
 	if retrievedRecord.Value != record.Value {
@@ -139,7 +139,7 @@ func TestGetNonExistentRecord(t *testing.T) {
 	defer cleanup()
 
 	// 存在しない ID でレコードを取得
-	nonExistentID := int64(99999)
+	nonExistentID := model.NewHexID(99999)
 	_, err := store.GetRecord(context.Background(), nonExistentID)
 	if err == nil {
 		t.Error("Expected error when getting non-existent record, got nil")
@@ -157,7 +157,7 @@ func TestCreateInvalidRecord(t *testing.T) {
 
 	// 無効なレコード（日時なし）
 	invalidRecord := &model.Record{
-		ProjectID: 1,
+		ProjectID: model.NewHexID(1),
 		Value:     1,
 	}
 
@@ -212,7 +212,7 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// 存在しないレコードの削除を試みる
-	err = store.DeleteRecord(context.Background(), int64(99999))
+	err = store.DeleteRecord(context.Background(), model.NewHexID(99999))
 	if err == nil {
 		t.Error("Expected error when deleting non-existent record, got nil")
 	}
@@ -343,8 +343,8 @@ func TestListRecords(t *testing.T) {
 
 			// 取得したレコードが期間内にあることを確認
 			for _, r := range result {
-				if r.ProjectID != readingProject.ID {
-					t.Errorf("Expected project ID %d, got %d", readingProject.ID, r.ProjectID)
+				if !r.ProjectID.Equals(readingProject.ID) {
+					t.Errorf("Expected project ID %s, got %s", readingProject.ID, r.ProjectID)
 				}
 
 				// 取得したレコードの日付を年月日のみで比較
@@ -476,7 +476,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// 存在しないプロジェクトを削除してもエラーにならないことを確認
-	err = store.DeleteProject(context.Background(), int64(99999))
+	err = store.DeleteProject(context.Background(), model.NewHexID(99999))
 	if err != nil {
 		t.Errorf("Expected no error when deleting non-existent project, got: %v", err)
 	}
@@ -518,61 +518,61 @@ func TestListRecordsWithTags(t *testing.T) {
 		name          string
 		tags          []string
 		expectedCount int
-		expectedIDs   []int64
+		expectedIDs   []model.HexID
 	}{
 		{
 			name:          "Filter by work tag",
 			tags:          []string{"work"},
 			expectedCount: 2,
-			expectedIDs:   []int64{record1.ID, record3.ID},
+			expectedIDs:   []model.HexID{record1.ID, record3.ID},
 		},
 		{
 			name:          "Filter by personal tag",
 			tags:          []string{"personal"},
 			expectedCount: 2,
-			expectedIDs:   []int64{record2.ID, record4.ID},
+			expectedIDs:   []model.HexID{record2.ID, record4.ID},
 		},
 		{
 			name:          "Filter by urgent tag",
 			tags:          []string{"urgent"},
 			expectedCount: 2,
-			expectedIDs:   []int64{record1.ID, record4.ID},
+			expectedIDs:   []model.HexID{record1.ID, record4.ID},
 		},
 		{
 			name:          "Filter by multiple tags (AND - both work and urgent)",
 			tags:          []string{"work", "urgent"},
 			expectedCount: 1,
-			expectedIDs:   []int64{record1.ID},
+			expectedIDs:   []model.HexID{record1.ID},
 		},
 		{
 			name:          "Filter by multiple tags (AND - both personal and urgent)",
 			tags:          []string{"personal", "urgent"},
 			expectedCount: 1,
-			expectedIDs:   []int64{record4.ID},
+			expectedIDs:   []model.HexID{record4.ID},
 		},
 		{
 			name:          "Filter by multiple tags (AND - work and meeting)",
 			tags:          []string{"work", "meeting"},
 			expectedCount: 1,
-			expectedIDs:   []int64{record3.ID},
+			expectedIDs:   []model.HexID{record3.ID},
 		},
 		{
 			name:          "Filter by non-existent tag",
 			tags:          []string{"nonexistent"},
 			expectedCount: 0,
-			expectedIDs:   []int64{},
+			expectedIDs:   []model.HexID{},
 		},
 		{
 			name:          "Filter by multiple tags where no record has all (AND)",
 			tags:          []string{"urgent", "hobby"},
 			expectedCount: 0,
-			expectedIDs:   []int64{},
+			expectedIDs:   []model.HexID{},
 		},
 		{
 			name:          "Filter by empty tags",
 			tags:          []string{},
 			expectedCount: 4,
-			expectedIDs:   []int64{record1.ID, record2.ID, record3.ID, record4.ID},
+			expectedIDs:   []model.HexID{record1.ID, record2.ID, record3.ID, record4.ID},
 		},
 	}
 
@@ -601,14 +601,14 @@ func TestListRecordsWithTags(t *testing.T) {
 			}
 
 			// IDが期待されるものと一致するかチェック
-			actualIDs := make(map[int64]bool)
+			actualIDs := make(map[model.HexID]bool)
 			for _, record := range records {
 				actualIDs[record.ID] = true
 			}
 
 			for _, expectedID := range tc.expectedIDs {
 				if !actualIDs[expectedID] {
-					t.Errorf("Expected record with ID %d not found in results", expectedID)
+					t.Errorf("Expected record with ID %s not found in results", expectedID)
 				}
 			}
 
@@ -620,7 +620,7 @@ func TestListRecordsWithTags(t *testing.T) {
 				// 全てのフィルタタグがレコードに含まれているか確認
 				for _, filterTag := range tc.tags {
 					if !slices.Contains(record.Tags, filterTag) {
-						t.Errorf("Record %d does not have required tag '%s' from filter tags %v", record.ID, filterTag, tc.tags)
+						t.Errorf("Record %s does not have required tag '%s' from filter tags %v", record.ID, filterTag, tc.tags)
 					}
 				}
 			}
@@ -722,10 +722,10 @@ func TestListRecordsDateRange(t *testing.T) {
 	}
 
 	// 正しいレコードが取得されることを確認
-	expectedIDs := map[int64]bool{record1.ID: true, record2.ID: true}
+	expectedIDs := map[model.HexID]bool{record1.ID: true, record2.ID: true}
 	for _, record := range records {
 		if !expectedIDs[record.ID] {
-			t.Errorf("Unexpected record ID %d in results", record.ID)
+			t.Errorf("Unexpected record ID %s in results", record.ID)
 		}
 	}
 }
@@ -754,12 +754,13 @@ func TestCreateProject(t *testing.T) {
 	}
 
 	// 内容の確認
-	// DBで自動生成されたIDは0以上であるべき（project.IDは0のまま）
-	if retrievedProject.ID < 0 {
-		t.Errorf("Expected ID > 0, got %d", retrievedProject.ID)
+	// DBで自動生成されたIDは有効な値であるべき
+	if !retrievedProject.ID.IsValid() {
+		t.Errorf("Expected retrieved project ID to be valid (auto-generated)")
 	}
-	if project.ID < 0 {
-		t.Errorf("Expected original project ID to remain 0, got %d", project.ID)
+	// CreateProjectは元のprojectオブジェクトのIDも更新する
+	if !project.ID.IsValid() {
+		t.Errorf("Expected original project ID to be updated with auto-generated ID")
 	}
 	if retrievedProject.Name != project.Name {
 		t.Errorf("Expected name %s, got %s", project.Name, retrievedProject.Name)
@@ -781,7 +782,7 @@ func TestGetNonExistentProject(t *testing.T) {
 	defer cleanup()
 
 	// 存在しないプロジェクトを取得
-	_, err := store.GetProject(context.Background(), int64(99999))
+	_, err := store.GetProject(context.Background(), model.NewHexID(99999))
 	if err == nil {
 		t.Error("Expected error when getting non-existent project, got nil")
 	}
@@ -988,7 +989,7 @@ func TestRecordProjectReferentialIntegrity(t *testing.T) {
 
 	// 存在しないプロジェクトIDでレコードを作成しようとする
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
-	record, err := model.NewRecord(timestamp, int64(99999), 1, []string{"test"})
+	record, err := model.NewRecord(timestamp, model.NewHexID(99999), 1, []string{"test"})
 	if err != nil {
 		t.Fatalf("Failed to create record model: %v", err)
 	}
@@ -1188,13 +1189,13 @@ func TestGetProjectTagsNonExistentProject(t *testing.T) {
 	defer cleanup()
 
 	// 存在しないプロジェクトのタグを取得
-	tags, err := store.GetProjectTags(context.Background(), int64(99999))
+	tags, err := store.GetProjectTags(context.Background(), model.NewHexID(99999))
 	if err != nil {
 		t.Errorf("Expected no error when getting tags for non-existent project, got: %v", err)
 	}
-  if len(tags) != 0 {
-    t.Errorf("Expected 0 tags for non-existent project, got %d", len(tags))
-  }
+	if len(tags) != 0 {
+		t.Errorf("Expected 0 tags for non-existent project, got %d", len(tags))
+	}
 }
 
 // TestGetProjectTagsEmptyProject はタグを持たないプロジェクトのタグ取得をテストします。
@@ -1354,9 +1355,9 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 		}
 
 		// 最初の3件が取得されているか確認（降順なので最新の3件）
-		for i := 0; i < 3; i++ {
-			if records[i].ID != allRecords[i].ID {
-				t.Errorf("Record at index %d has incorrect ID. Expected %d, got %d",
+    for i := range 3 {
+			if !records[i].ID.Equals(allRecords[i].ID) {
+				t.Errorf("Record at index %d has incorrect ID. Expected %s, got %s",
 					i, allRecords[i].ID, records[i].ID)
 			}
 		}
@@ -1390,17 +1391,17 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 
 		// 重要: 2ページ目は1ページ目と異なるレコードであるべき
 		// カーソルの次のレコード（allRecords[3], [4], [5]）が返されるべき
-		for i := 0; i < 3; i++ {
+    for i := range 3 {
 			expectedIndex := i + 3
-			if records[i].ID != allRecords[expectedIndex].ID {
-				t.Errorf("Record at index %d on second page has incorrect ID. Expected %d (from allRecords[%d]), got %d",
+			if !records[i].ID.Equals(allRecords[expectedIndex].ID) {
+				t.Errorf("Record at index %d on second page has incorrect ID. Expected %s (from allRecords[%d]), got %s",
 					i, allRecords[expectedIndex].ID, expectedIndex, records[i].ID)
 			}
 		}
 
 		// バグがある場合: 1ページ目と同じレコードが返される
 		// このチェックでバグを明示的に検出
-		if len(records) > 0 && records[0].ID == allRecords[0].ID {
+		if len(records) > 0 && records[0].ID.Equals(allRecords[0].ID) {
 			t.Error("BUG DETECTED: Second page returned same records as first page. Cursor is not working!")
 		}
 	})
@@ -1511,16 +1512,16 @@ func TestListProjectsWithCursorPagination(t *testing.T) {
 		}
 
 		// 2ページ目は1ページ目と異なるプロジェクトであるべき
-		for i := 0; i < 3; i++ {
+		for i := range 3{
 			expectedIndex := i + 3
-			if projects[i].ID != allProjects[expectedIndex].ID {
-				t.Errorf("Project at index %d on second page has incorrect ID. Expected %d (from allProjects[%d]), got %d",
-					i, allProjects[expectedIndex].ID, expectedIndex, projects[i].ID)
+			if !projects[i].ID.Equals(allProjects[expectedIndex].ID) {
+				t.Errorf("Project at index %d on second page has incorrect ID. Expected %s (from allProjects[%d]), got %s",
+					i, allProjects[expectedIndex].ID, expectedIndex, projects[i])
 			}
 		}
 
 		// バグがある場合: 1ページ目と同じプロジェクトが返される
-		if len(projects) > 0 && projects[0].ID == allProjects[0].ID {
+		if len(projects) > 0 && projects[0].ID.Equals(allProjects[0].ID) {
 			t.Error("BUG DETECTED: Second page returned same projects as first page. Cursor is not working!")
 		}
 	})
@@ -1567,7 +1568,7 @@ func TestListAllRecordsWithPagination(t *testing.T) {
 	}
 
 	var retrievedRecords []*model.Record
-	var seenIDs = make(map[int64]bool)
+	var seenIDs = make(map[model.HexID]bool)
 
 	for record, err := range store.ListAllRecords(context.Background(), params) {
 		if err != nil {
@@ -1577,7 +1578,7 @@ func TestListAllRecordsWithPagination(t *testing.T) {
 		// 重複チェック（カーソルが機能していない場合、同じレコードが繰り返される）
 		recordID := record.ID
 		if seenIDs[recordID] {
-			t.Errorf("DUPLICATE DETECTED: Record ID %d appeared more than once. Cursor pagination is broken!", recordID)
+			t.Errorf("DUPLICATE DETECTED: Record ID %s appeared more than once. Cursor pagination is broken!", recordID)
 		}
 		seenIDs[recordID] = true
 

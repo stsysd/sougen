@@ -9,21 +9,21 @@ import (
 
 // Record は日々のアクティビティデータを表すモデルです。
 type Record struct {
-	ID        int64     `json:"id"`
-	ProjectID int64     `json:"project_id"` // プロジェクトID
+	ID        HexID     `json:"id"`
+	ProjectID HexID     `json:"project_id"` // プロジェクトID
 	Value     int       `json:"value"`      // 記録値
 	Timestamp time.Time `json:"timestamp"`  // アクティビティの日時
 	Tags      []string  `json:"tags"`       // タグ一覧
 }
 
 // NewRecord はRecordの新しいインスタンスを作成します。
-// IDはデータベース側で自動生成されるため、0を設定します。
-func NewRecord(timestamp time.Time, projectID int64, value int, tags []string) (*Record, error) {
+// IDはデータベース側で自動生成されるため、ゼロ値（無効な状態）を設定します。
+func NewRecord(timestamp time.Time, projectID HexID, value int, tags []string) (*Record, error) {
 	if tags == nil {
 		tags = []string{}
 	}
 	rec := &Record{
-		ID:        -1, // DBのAUTOINCREMENTで自動生成
+		ID:        HexID{}, // DBのAUTOINCREMENTで自動生成（valid=false）
 		ProjectID: projectID,
 		Value:     value,
 		Timestamp: timestamp,
@@ -36,9 +36,9 @@ func NewRecord(timestamp time.Time, projectID int64, value int, tags []string) (
 }
 
 // LoadRecord は既存のRecordインスタンスを作成します。
-func LoadRecord(id int64, timestamp time.Time, projectID int64, value int, tags []string) (*Record, error) {
+func LoadRecord(id HexID, timestamp time.Time, projectID HexID, value int, tags []string) (*Record, error) {
 	// LoadRecordはDBから読み込んだレコード用なので、IDは必須
-	if id <= 0 {
+	if !id.IsValid() {
 		return nil, errors.New("id is required for loaded record")
 	}
 
@@ -67,7 +67,7 @@ func (r *Record) Validate() error {
 	}
 
 	// プロジェクトIDの検証
-	if r.ProjectID <= 0 {
+	if !r.ProjectID.IsValid() {
 		return errors.New("project_id is required")
 	}
 
