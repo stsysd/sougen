@@ -17,6 +17,15 @@ type HexID struct {
 	valid bool
 }
 
+// ParseHexID parses a 16-digit hex string and returns a HexID.
+func ParseHexID(hexStr string) (HexID, error) {
+	id, err := strconv.ParseInt(hexStr, 16, 64)
+	if err != nil {
+		return HexID{}, fmt.Errorf("invalid hex id format: %w", err)
+	}
+	return NewHexID(id), nil
+}
+
 // NewHexID creates a valid HexID from an int64 value.
 func NewHexID(id int64) HexID {
 	return HexID{value: id, valid: true}
@@ -29,6 +38,14 @@ func (h HexID) ToInt64() int64 {
 		return 0
 	}
 	return h.value
+}
+
+// String returns the HexID as a 16-digit zero-padded hex string.
+func (h HexID) String() string {
+  if !h.valid {
+    return ""
+  }
+  return fmt.Sprintf("%016x", h.value)
 }
 
 // IsValid returns true if the HexID has been properly initialized.

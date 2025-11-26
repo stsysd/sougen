@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -90,7 +89,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 // CreateRecordParams represents parameters for creating a record.
 type CreateRecordParams struct {
-	ProjectID int64
+	ProjectID model.HexID
 	Timestamp *model.Timestamp
 	Value     *model.Value
 	Tags      []string
@@ -110,7 +109,7 @@ func NewCreateRecordParams(r *http.Request) (*CreateRecordParams, error) {
 		return nil, fmt.Errorf("invalid request body: %w", err)
 	}
 
-	if requestBody.ProjectID.ToInt64() <= 0 {
+	if !requestBody.ProjectID.IsValid() {
 		return nil, fmt.Errorf("project_id is required")
 	}
 
@@ -125,7 +124,7 @@ func NewCreateRecordParams(r *http.Request) (*CreateRecordParams, error) {
 	}
 
 	return &CreateRecordParams{
-		ProjectID: requestBody.ProjectID.ToInt64(),
+		ProjectID: requestBody.ProjectID,
 		Timestamp: timestamp,
 		Value:     value,
 		Tags:      requestBody.Tags,
@@ -150,7 +149,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 新しいレコードの作成
-	record, err := model.NewRecord(params.Timestamp.Time(), model.NewHexID(params.ProjectID), params.Value.Int(), params.Tags)
+	record, err := model.NewRecord(params.Timestamp.Time(), params.ProjectID, params.Value.Int(), params.Tags)
 	if err != nil {
 		log.Printf("Error creating record: %v", err)
 		http.Error(w, "Failed to create record", http.StatusBadRequest)
@@ -174,12 +173,12 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 
 // GetRecordParams represents parameters for getting a record.
 type GetRecordParams struct {
-	RecordID int64
+	RecordID model.HexID
 }
 
 // NewGetRecordParams creates parameters for record retrieval from HTTP request.
 func NewGetRecordParams(r *http.Request) (*GetRecordParams, error) {
-	recordID, err := parseHexID(r.PathValue("record_id"))
+	recordID, err := model.ParseHexID(r.PathValue("record_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +218,7 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRecordParams represents parameters for updating a record.
 type UpdateRecordParams struct {
-	RecordID  int64
+	RecordID  model.HexID
 	Timestamp *model.Timestamp
 	Value     *model.Value
 	Tags      []string
@@ -227,7 +226,7 @@ type UpdateRecordParams struct {
 
 // NewUpdateRecordParams creates parameters for record update from HTTP request.
 func NewUpdateRecordParams(r *http.Request) (*UpdateRecordParams, error) {
-	recordID, err := parseHexID(r.PathValue("record_id"))
+	recordID, err := model.ParseHexID(r.PathValue("record_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -327,12 +326,12 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 
 // DeleteRecordParams represents parameters for deleting a record.
 type DeleteRecordParams struct {
-	RecordID int64
+	RecordID model.HexID
 }
 
 // NewDeleteRecordParams creates parameters for record deletion from HTTP request.
 func NewDeleteRecordParams(r *http.Request) (*DeleteRecordParams, error) {
-	recordID, err := parseHexID(r.PathValue("record_id"))
+	recordID, err := model.ParseHexID(r.PathValue("record_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +367,7 @@ func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
 
 // GetGraphParams represents parameters for getting a graph.
 type GetGraphParams struct {
-	ProjectID int64
+	ProjectID model.HexID
 	DateRange *model.DateRange
 	Tags      *model.Tags
 	Track     bool
@@ -376,7 +375,7 @@ type GetGraphParams struct {
 
 // NewGetGraphParams creates parameters for graph generation from HTTP request.
 func NewGetGraphParams(r *http.Request) (*GetGraphParams, error) {
-	projectID, err := parseHexID(r.PathValue("project_id"))
+	projectID, err := model.ParseHexID(r.PathValue("project_id"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid project_id: %w", err)
 	}
@@ -411,7 +410,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	// アクセスカウンター機能: trackパラメータがある場合、レコードを自動作成
 	if params.Track {
 		// 新しいレコードの作成（現在時刻、値は1）
-		record, err := model.NewRecord(time.Now(), model.NewHexID(params.ProjectID), 1, params.Tags.Values())
+		record, err := model.NewRecord(time.Now(), params.ProjectID, 1, params.Tags.Values())
 		if err != nil {
 			log.Printf("Error creating access counter record: %v", err)
 			// エラーが発生してもグラフ表示は続行するため、エラーレスポンスは返さない
@@ -502,7 +501,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 
 // ListRecordsParams represents parameters for listing records.
 type ListRecordsParams struct {
-	ProjectID  *int64
+	ProjectID  *model.HexID
 	DateRange  *model.DateRange
 	Tags       *model.Tags
 	Pagination *model.Pagination
@@ -540,7 +539,7 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 			return nil, err
 		}
 
-		pid := cursor.ProjectID.ToInt64()
+		pid := cursor.ProjectID
 		return &ListRecordsParams{
 			ProjectID:  &pid,
 			DateRange:  dateRange,
@@ -550,10 +549,10 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 	}
 
 	// No cursor: use regular parameters from query
-	var projectID *int64
+	var projectID *model.HexID
 	projectIDStr := query.Get("project_id")
 	if projectIDStr != "" {
-		pid, err := parseHexID(projectIDStr)
+		pid, err := model.ParseHexID(projectIDStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid project_id: %w", err)
 		}
@@ -597,7 +596,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 
 	// Decode cursor if present to extract position information
 	var cursorTimestamp *time.Time
-	var cursorID *int64
+	var cursorID *model.HexID
 	if params.Pagination.Cursor() != nil {
 		decodedCursor, err := model.DecodeRecordCursor(*params.Pagination.Cursor())
 		if err != nil {
@@ -610,12 +609,11 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cursorTimestamp = &ts
-		id := decodedCursor.ID.ToInt64()
-		cursorID = &id
+		cursorID = &decodedCursor.ID
 	}
 
 	// store.ListRecordsParams を作成
-	var projectID int64
+	var projectID model.HexID
 	if params.ProjectID != nil {
 		projectID = *params.ProjectID
 	}
@@ -659,7 +657,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 		cursor := model.EncodeRecordCursor(
 			lastRecord.Timestamp,
 			lastRecord.ID,
-			model.NewHexID(projectID),
+			projectID,
 			params.DateRange.From(),
 			params.DateRange.To(),
 			params.Tags.Values(),
@@ -676,12 +674,12 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 
 // GetProjectParams represents parameters for getting project info.
 type GetProjectParams struct {
-	ProjectID int64
+	ProjectID model.HexID
 }
 
 // NewGetProjectParams creates parameters for project retrieval from HTTP request.
 func NewGetProjectParams(r *http.Request) (*GetProjectParams, error) {
-	projectID, err := parseHexID(r.PathValue("project_id"))
+	projectID, err := model.ParseHexID(r.PathValue("project_id"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid project_id: %w", err)
 	}
@@ -704,7 +702,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	project, err := s.store.GetProject(r.Context(), params.ProjectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
-			http.Error(w, fmt.Sprintf("Project with ID %d not found", params.ProjectID), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Project with ID %s not found", params.ProjectID), http.StatusNotFound)
 		} else {
 			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
 		}
@@ -864,7 +862,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 // handleUpdateProject はプロジェクト更新をハンドリングします。
 func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	// URLからプロジェクトIDを取得
-	projectID, err := parseHexID(r.PathValue("project_id"))
+	projectID, err := model.ParseHexID(r.PathValue("project_id"))
 	if err != nil {
 		http.Error(w, "Invalid project_id", http.StatusBadRequest)
 		return
@@ -874,7 +872,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	existingProject, err := s.store.GetProject(r.Context(), projectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
-			http.Error(w, fmt.Sprintf("Project with ID %d not found", projectID), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Project with ID %s not found", projectID), http.StatusNotFound)
 		} else {
 			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
 		}
@@ -920,12 +918,12 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 
 // DeleteProjectParams represents parameters for deleting a project.
 type DeleteProjectParams struct {
-	ProjectID int64
+	ProjectID model.HexID
 }
 
 // NewDeleteProjectParams creates parameters for project deletion from HTTP request.
 func NewDeleteProjectParams(r *http.Request) (*DeleteProjectParams, error) {
-	projectID, err := parseHexID(r.PathValue("project_id"))
+	projectID, err := model.ParseHexID(r.PathValue("project_id"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid project_id: %w", err)
 	}
@@ -997,7 +995,7 @@ func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request)
 	}
 
 	// レコードの一括削除を実行
-	count, err := s.store.DeleteRecordsUntil(r.Context(), deletionData.ProjectID.ToInt64(), timestamp.Time())
+	count, err := s.store.DeleteRecordsUntil(r.Context(), deletionData.ProjectID, timestamp.Time())
 	if err != nil {
 		log.Printf("Error deleting records until specified date: %v", err)
 		http.Error(w, "Failed to delete records", http.StatusInternalServerError)
@@ -1018,12 +1016,12 @@ func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request)
 
 // GetProjectTagsParams represents parameters for getting project tags.
 type GetProjectTagsParams struct {
-	ProjectID int64
+	ProjectID model.HexID
 }
 
 // NewGetProjectTagsParams creates parameters for project tags retrieval from HTTP request.
 func NewGetProjectTagsParams(r *http.Request) (*GetProjectTagsParams, error) {
-	projectID, err := parseHexID(r.PathValue("project_id"))
+	projectID, err := model.ParseHexID(r.PathValue("project_id"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid project_id: %w", err)
 	}
@@ -1055,25 +1053,6 @@ func (s *Server) handleGetProjectTags(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(tags); err != nil {
 		log.Printf("Error encoding response: %v", err)
 	}
-}
-
-// parseHexID parses a 16-digit hex string and returns an int64.
-func parseHexID(hexStr string) (int64, error) {
-	id, err := strconv.ParseInt(hexStr, 16, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid hex id format: %w", err)
-	}
-	return id, nil
-}
-
-// parseInt は文字列を整数に変換し、エラーハンドリングを行います。
-func parseInt(s string) (int, error) {
-	var value int
-	var err error
-	if _, err = fmt.Sscanf(s, "%d", &value); err != nil {
-		return 0, err
-	}
-	return value, nil
 }
 
 // Run はサーバーを指定されたアドレスで起動します。

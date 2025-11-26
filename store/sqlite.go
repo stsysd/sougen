@@ -26,18 +26,18 @@ type ListProjectsParams struct {
 
 // ListRecordsParams はレコード一覧取得のパラメータです。
 type ListRecordsParams struct {
-	ProjectID       int64
+	ProjectID       model.HexID
 	From            time.Time
 	To              time.Time
 	Pagination      *model.Pagination
 	Tags            []string
-	CursorTimestamp *time.Time // Cursor position: timestamp (nil if no cursor)
-	CursorID        *int64     // Cursor position: ID (nil if no cursor)
+	CursorTimestamp *time.Time      // Cursor position: timestamp (nil if no cursor)
+	CursorID        *model.HexID    // Cursor position: ID (nil if no cursor)
 }
 
 // ListAllRecordsParams は全レコード取得のパラメータです（ページネーションなし）。
 type ListAllRecordsParams struct {
-	ProjectID int64
+	ProjectID model.HexID
 	From      time.Time
 	To        time.Time
 	Tags      []string
@@ -49,13 +49,13 @@ type Store interface {
 	// CreateRecord は新しいレコードを作成します。
 	CreateRecord(ctx context.Context, record *model.Record) error
 	// GetRecord は指定されたIDのレコードを取得します。
-	GetRecord(ctx context.Context, id int64) (*model.Record, error)
+	GetRecord(ctx context.Context, id model.HexID) (*model.Record, error)
 	// UpdateRecord は指定されたIDのレコードを更新します。
 	UpdateRecord(ctx context.Context, record *model.Record) error
 	// DeleteRecord は指定されたIDのレコードを削除します。
-	DeleteRecord(ctx context.Context, id int64) error
+	DeleteRecord(ctx context.Context, id model.HexID) error
 	// DeleteRecordsUntil は指定日時より前のレコードを削除します。
-	DeleteRecordsUntil(ctx context.Context, projectID int64, until time.Time) (int, error)
+	DeleteRecordsUntil(ctx context.Context, projectID model.HexID, until time.Time) (int, error)
 	// ListRecords は指定されたパラメータに基づいてレコードを取得します。
 	ListRecords(ctx context.Context, params *ListRecordsParams) ([]*model.Record, error)
 	// ListAllRecords は指定されたパラメータに基づいて全てのレコードをイテレータで返します（ページネーションなし）。
@@ -66,15 +66,15 @@ type Store interface {
 	// CreateProject は新しいプロジェクトを作成します。
 	CreateProject(ctx context.Context, project *model.Project) error
 	// GetProject は指定されたIDのプロジェクトを取得します。
-	GetProject(ctx context.Context, id int64) (*model.Project, error)
+	GetProject(ctx context.Context, id model.HexID) (*model.Project, error)
 	// UpdateProject は指定されたプロジェクトを更新します。
 	UpdateProject(ctx context.Context, project *model.Project) error
 	// DeleteProject は指定されたプロジェクトIDのすべてのレコードとプロジェクトを削除します。
-	DeleteProject(ctx context.Context, projectID int64) error
+	DeleteProject(ctx context.Context, projectID model.HexID) error
 	// ListProjects は指定されたパラメータに基づいてプロジェクトを取得します。
 	ListProjects(ctx context.Context, params *ListProjectsParams) ([]*model.Project, error)
 	// GetProjectTags は指定されたプロジェクトIDのタグ一覧を取得します。
-	GetProjectTags(ctx context.Context, projectID int64) ([]string, error)
+	GetProjectTags(ctx context.Context, projectID model.HexID) ([]string, error)
 
 	// Close はストアの接続を閉じます。
 	Close() error
@@ -241,9 +241,9 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 }
 
 // GetRecord は指定されたIDのレコードを取得します。
-func (s *SQLiteStore) GetRecord(ctx context.Context, id int64) (*model.Record, error) {
+func (s *SQLiteStore) GetRecord(ctx context.Context, id model.HexID) (*model.Record, error) {
 	// sqlcで生成されたクエリを使用
-	dbRecord, err := s.queries.GetRecord(ctx, id)
+	dbRecord, err := s.queries.GetRecord(ctx, id.ToInt64())
 	if err == sql.ErrNoRows {
 		return nil, errors.New("record not found")
 	}
@@ -284,7 +284,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 	var cursorColumn any
 	if params.CursorTimestamp != nil && params.CursorID != nil {
 		// カーソルが指定されている場合、パラメータから直接取得
-		cursorID = *params.CursorID
+		cursorID = params.CursorID.ToInt64()
 		cursorTimestamp = params.CursorTimestamp.Format(time.RFC3339)
 		cursorColumn = 1 // 非NULL値を設定してSQLの "? IS NULL" をFALSEにする
 	} else {
@@ -301,7 +301,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
 			Timestamp:   fromStr,
 			Timestamp_2: toStr,
-			ProjectID:   params.ProjectID,
+			ProjectID:   params.ProjectID.ToInt64(),
 			Column4:     cursorColumn,
 			Timestamp_3: cursorTimestamp,
 			Timestamp_4: cursorTimestamp,
@@ -334,7 +334,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		dbRecords, err := s.queries.ListRecordsWithTags(ctx, db.ListRecordsWithTagsParams{
 			Timestamp:   fromStr,
 			Timestamp_2: toStr,
-			ProjectID:   params.ProjectID,
+			ProjectID:   params.ProjectID.ToInt64(),
 			Tags:        params.Tags,
 			Column5:     cursorColumn,
 			Timestamp_3: cursorTimestamp,
@@ -375,7 +375,7 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 	return func(yield func(*model.Record, error) bool) {
 		const pageSize = 1000
 		var cursorTimestamp *time.Time
-		var cursorID *int64
+		var cursorID *model.HexID
 
 		for {
 			pagination := model.NewPaginationWithValues(pageSize, nil)
@@ -413,8 +413,7 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 			// 次のページのためのカーソルを設定（新しいkeyset pagination形式）
 			lastRecord := records[len(records)-1]
 			cursorTimestamp = &lastRecord.Timestamp
-			id := lastRecord.ID.ToInt64()
-			cursorID = &id
+			cursorID = &lastRecord.ID
 		}
 	}
 }
@@ -425,9 +424,9 @@ func (s *SQLiteStore) Close() error {
 }
 
 // DeleteRecord は指定されたIDのレコードを削除します。
-func (s *SQLiteStore) DeleteRecord(ctx context.Context, id int64) error {
+func (s *SQLiteStore) DeleteRecord(ctx context.Context, id model.HexID) error {
 	// sqlcで生成されたクエリを使用
-	result, err := s.queries.DeleteRecord(ctx, id)
+	result, err := s.queries.DeleteRecord(ctx, id.ToInt64())
 	if err != nil {
 		return err
 	}
@@ -447,7 +446,7 @@ func (s *SQLiteStore) DeleteRecord(ctx context.Context, id int64) error {
 }
 
 // DeleteProject は指定されたプロジェクトを削除します。
-func (s *SQLiteStore) DeleteProject(ctx context.Context, projectID int64) error {
+func (s *SQLiteStore) DeleteProject(ctx context.Context, projectID model.HexID) error {
 	// トランザクションの開始
 	tx, err := s.conn.Begin()
 	if err != nil {
@@ -465,7 +464,7 @@ func (s *SQLiteStore) DeleteProject(ctx context.Context, projectID int64) error 
 	queriesWithTx := s.queries.WithTx(tx)
 
 	// プロジェクトを削除（ON DELETE CASCADEにより関連レコードも自動削除される）
-	err = queriesWithTx.DeleteProject(ctx, projectID)
+	err = queriesWithTx.DeleteProject(ctx, projectID.ToInt64())
 	if err != nil {
 		return fmt.Errorf("failed to delete project entity: %w", err)
 	}
@@ -480,7 +479,7 @@ func (s *SQLiteStore) DeleteProject(ctx context.Context, projectID int64) error 
 }
 
 // DeleteRecordsUntil は指定日時より前のレコードを削除します。
-func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, projectID int64, until time.Time) (int, error) {
+func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, projectID model.HexID, until time.Time) (int, error) {
 	// トランザクションの開始
 	tx, err := s.conn.Begin()
 	if err != nil {
@@ -500,13 +499,13 @@ func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, projectID int64, u
 	// sqlcで生成されたクエリを使用（トランザクション内で）
 	queriesWithTx := s.queries.WithTx(tx)
 	var result sql.Result
-	if projectID == 0 {
+	if !projectID.IsValid() {
 		// 特定のプロジェクト指定がない場合は全プロジェクトから削除
 		result, err = queriesWithTx.DeleteRecordsUntil(ctx, untilStr)
 	} else {
 		// 特定プロジェクトのレコードを削除
 		result, err = queriesWithTx.DeleteRecordsUntilByProject(ctx, db.DeleteRecordsUntilByProjectParams{
-			ProjectID: projectID,
+			ProjectID: projectID.ToInt64(),
 			Timestamp: untilStr,
 		})
 	}
@@ -561,9 +560,9 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, project *model.Project)
 }
 
 // GetProject は指定されたIDのプロジェクトを取得します。
-func (s *SQLiteStore) GetProject(ctx context.Context, id int64) (*model.Project, error) {
+func (s *SQLiteStore) GetProject(ctx context.Context, id model.HexID) (*model.Project, error) {
 	// sqlcで生成されたクエリを使用
-	dbProject, err := s.queries.GetProject(ctx, id)
+	dbProject, err := s.queries.GetProject(ctx, id.ToInt64())
 	if err == sql.ErrNoRows {
 		return nil, errors.New("project not found")
 	}
@@ -678,9 +677,9 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 }
 
 // GetProjectTags は指定されたプロジェクトIDのタグ一覧を取得します。
-func (s *SQLiteStore) GetProjectTags(ctx context.Context, projectID int64) ([]string, error) {
+func (s *SQLiteStore) GetProjectTags(ctx context.Context, projectID model.HexID) ([]string, error) {
 	// sqlcで生成されたクエリを使用
-	tags, err := s.queries.GetProjectTags(ctx, projectID)
+	tags, err := s.queries.GetProjectTags(ctx, projectID.ToInt64())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project tags: %w", err)
 	}
