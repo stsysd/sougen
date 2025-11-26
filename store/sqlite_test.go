@@ -1193,9 +1193,9 @@ func TestGetProjectTagsNonExistentProject(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error when getting tags for non-existent project, got: %v", err)
 	}
-  if len(tags) != 0 {
-    t.Errorf("Expected 0 tags for non-existent project, got %d", len(tags))
-  }
+	if len(tags) != 0 {
+		t.Errorf("Expected 0 tags for non-existent project, got %d", len(tags))
+	}
 }
 
 // TestGetProjectTagsEmptyProject はタグを持たないプロジェクトのタグ取得をテストします。

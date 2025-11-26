@@ -27,12 +27,12 @@ func testEncodeBase64(s string) string {
 // TestNewPagination tests the NewPagination function
 func TestNewPagination(t *testing.T) {
 	tests := []struct {
-		name        string
-		limitStr    string
-		cursorStr   string
-		expectError bool
+		name          string
+		limitStr      string
+		cursorStr     string
+		expectError   bool
 		expectedLimit int
-		description string
+		description   string
 	}{
 		{
 			name:          "Valid limit and cursor",

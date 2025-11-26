@@ -31,8 +31,8 @@ type ListRecordsParams struct {
 	To              time.Time
 	Pagination      *model.Pagination
 	Tags            []string
-	CursorTimestamp *time.Time      // Cursor position: timestamp (nil if no cursor)
-	CursorID        *model.HexID    // Cursor position: ID (nil if no cursor)
+	CursorTimestamp *time.Time   // Cursor position: timestamp (nil if no cursor)
+	CursorID        *model.HexID // Cursor position: ID (nil if no cursor)
 }
 
 // ListAllRecordsParams は全レコード取得のパラメータです（ページネーションなし）。

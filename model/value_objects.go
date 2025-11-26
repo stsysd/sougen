@@ -42,10 +42,10 @@ func (h HexID) ToInt64() int64 {
 
 // String returns the HexID as a 16-digit zero-padded hex string.
 func (h HexID) String() string {
-  if !h.valid {
-    return ""
-  }
-  return fmt.Sprintf("%016x", h.value)
+	if !h.valid {
+		return ""
+	}
+	return fmt.Sprintf("%016x", h.value)
 }
 
 // IsValid returns true if the HexID has been properly initialized.
