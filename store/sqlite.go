@@ -138,7 +138,7 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 
 	// sqlcで生成されたクエリを使用（IDは自動生成）
 	ret, err := s.queries.CreateRecord(ctx, db.CreateRecordParams{
-		ProjectID: record.ProjectID,
+		ProjectID: record.ProjectID.ToInt64(),
 		Value:     int64(record.Value),
 		Timestamp: formattedTime,
 	})
@@ -150,7 +150,7 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 	if err != nil {
 		return fmt.Errorf("failed to get last insert ID: %w", err)
 	}
-	record.ID = id
+	record.ID = model.NewHexID(id)
 
 	// タグを個別に挿入
 	for _, tag := range record.Tags {
@@ -194,10 +194,10 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 
 	// レコードの基本情報を更新
 	result, err := queriesWithTx.UpdateRecord(ctx, db.UpdateRecordParams{
-		ProjectID: record.ProjectID,
+		ProjectID: record.ProjectID.ToInt64(),
 		Value:     int64(record.Value),
 		Timestamp: formattedTime,
-		ID:        record.ID,
+		ID:        record.ID.ToInt64(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update record: %w", err)
@@ -215,7 +215,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	}
 
 	// 既存のタグを削除
-	err = queriesWithTx.DeleteRecordTags(ctx, record.ID)
+	err = queriesWithTx.DeleteRecordTags(ctx, record.ID.ToInt64())
 	if err != nil {
 		return fmt.Errorf("failed to delete existing tags: %w", err)
 	}
@@ -223,7 +223,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	// 新しいタグを個別に挿入
 	for _, tag := range record.Tags {
 		err = queriesWithTx.CreateRecordTag(ctx, db.CreateRecordTagParams{
-			RecordID: record.ID,
+			RecordID: record.ID.ToInt64(),
 			Tag:      tag,
 		})
 		if err != nil {
@@ -264,7 +264,7 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id int64) (*model.Record, e
 	}
 
 	// レコードの作成
-	return model.LoadRecord(dbRecord.ID, timestamp, dbRecord.ProjectID, int(dbRecord.Value), tags)
+	return model.LoadRecord(model.NewHexID(dbRecord.ID), timestamp, model.NewHexID(dbRecord.ProjectID), int(dbRecord.Value), tags)
 }
 
 // ListRecords は指定されたプロジェクトの、指定した期間内のレコードを取得します。
@@ -323,7 +323,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 				tags = strings.Split(tagsStr, " ")
 			}
 
-			record, err := model.LoadRecord(dbRecord.ID, timestamp, dbRecord.ProjectID, int(dbRecord.Value), tags)
+			record, err := model.LoadRecord(model.NewHexID(dbRecord.ID), timestamp, model.NewHexID(dbRecord.ProjectID), int(dbRecord.Value), tags)
 			if err != nil {
 				return nil, err
 			}
@@ -358,7 +358,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 				recordTags = strings.Split(tagsStr, " ")
 			}
 
-			record, err := model.LoadRecord(dbRecord.ID, timestamp, dbRecord.ProjectID, int(dbRecord.Value), recordTags)
+			record, err := model.LoadRecord(model.NewHexID(dbRecord.ID), timestamp, model.NewHexID(dbRecord.ProjectID), int(dbRecord.Value), recordTags)
 			if err != nil {
 				return nil, err
 			}
@@ -413,7 +413,8 @@ func (s *SQLiteStore) ListAllRecords(ctx context.Context, params *ListAllRecords
 			// 次のページのためのカーソルを設定（新しいkeyset pagination形式）
 			lastRecord := records[len(records)-1]
 			cursorTimestamp = &lastRecord.Timestamp
-			cursorID = &lastRecord.ID
+			id := lastRecord.ID.ToInt64()
+			cursorID = &id
 		}
 	}
 }
@@ -555,7 +556,7 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, project *model.Project)
 		return fmt.Errorf("failed to get last insert ID: %w", err)
 	}
 
-	project.ID = id
+	project.ID = model.NewHexID(id)
 	return nil
 }
 
@@ -582,7 +583,7 @@ func (s *SQLiteStore) GetProject(ctx context.Context, id int64) (*model.Project,
 	}
 
 	// プロジェクトの作成
-	return model.LoadProject(dbProject.ID, dbProject.Name, dbProject.Description, createdAt, updatedAt)
+	return model.LoadProject(model.NewHexID(dbProject.ID), dbProject.Name, dbProject.Description, createdAt, updatedAt)
 }
 
 // UpdateProject は指定されたプロジェクトを更新します。
@@ -599,7 +600,7 @@ func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project)
 	result, err := s.queries.UpdateProject(ctx, db.UpdateProjectParams{
 		Description: project.Description,
 		UpdatedAt:   updatedAtStr,
-		ID:          project.ID,
+		ID:          project.ID.ToInt64(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update project: %w", err)
@@ -666,7 +667,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 		}
 
 		// プロジェクトの作成
-		project, err := model.LoadProject(dbProject.ID, dbProject.Name, dbProject.Description, createdAt, updatedAt)
+		project, err := model.LoadProject(model.NewHexID(dbProject.ID), dbProject.Name, dbProject.Description, createdAt, updatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load project: %w", err)
 		}
