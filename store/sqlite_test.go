@@ -111,22 +111,22 @@ func TestCreateAndGetRecord(t *testing.T) {
 	}
 
 	// 作成したレコードを取得
-	retrievedRecord, err := store.GetRecord(context.Background(), record.ID)
+	retrievedRecord, err := store.GetRecord(context.Background(), record.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to get record: %v", err)
 	}
 
 	// 取得したレコードが元のレコードと一致することを確認
-	if retrievedRecord.ID != record.ID {
-		t.Errorf("Expected ID %d, got %d", record.ID, retrievedRecord.ID)
+	if !retrievedRecord.ID.Equals(record.ID) {
+		t.Errorf("Expected ID %d, got %d", record.ID.ToInt64(), retrievedRecord.ID.ToInt64())
 	}
 
 	if !retrievedRecord.Timestamp.Equal(record.Timestamp) {
 		t.Errorf("Expected Timestamp %v, got %v", record.Timestamp, retrievedRecord.Timestamp)
 	}
 
-	if retrievedRecord.ProjectID != record.ProjectID {
-		t.Errorf("Expected ProjectID %d, got %d", record.ProjectID, retrievedRecord.ProjectID)
+	if !retrievedRecord.ProjectID.Equals(record.ProjectID) {
+		t.Errorf("Expected ProjectID %d, got %d", record.ProjectID.ToInt64(), retrievedRecord.ProjectID.ToInt64())
 	}
 
 	if retrievedRecord.Value != record.Value {
@@ -157,7 +157,7 @@ func TestCreateInvalidRecord(t *testing.T) {
 
 	// 無効なレコード（日時なし）
 	invalidRecord := &model.Record{
-		ProjectID: 1,
+		ProjectID: model.NewHexID(1),
 		Value:     1,
 	}
 
@@ -196,13 +196,13 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// レコードを削除
-	err = store.DeleteRecord(context.Background(), record.ID)
+	err = store.DeleteRecord(context.Background(), record.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to delete record: %v", err)
 	}
 
 	// 削除したレコードが存在しないことを確認
-	_, err = store.GetRecord(context.Background(), record.ID)
+	_, err = store.GetRecord(context.Background(), record.ID.ToInt64())
 	if err == nil {
 		t.Error("Expected error when getting deleted record, got nil")
 	}
@@ -327,7 +327,7 @@ func TestListRecords(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pagination, _ := model.NewPagination("100", "")
 			result, err := store.ListRecords(context.Background(), &ListRecordsParams{
-				ProjectID:  readingProject.ID,
+				ProjectID:  readingProject.ID.ToInt64(),
 				From:       tc.from,
 				To:         tc.to,
 				Pagination: pagination,
@@ -343,8 +343,8 @@ func TestListRecords(t *testing.T) {
 
 			// 取得したレコードが期間内にあることを確認
 			for _, r := range result {
-				if r.ProjectID != readingProject.ID {
-					t.Errorf("Expected project ID %d, got %d", readingProject.ID, r.ProjectID)
+				if !r.ProjectID.Equals(readingProject.ID) {
+					t.Errorf("Expected project ID %d, got %d", readingProject.ID.ToInt64(), r.ProjectID.ToInt64())
 				}
 
 				// 取得したレコードの日付を年月日のみで比較
@@ -414,7 +414,7 @@ func TestDeleteProject(t *testing.T) {
 	// プロジェクト1のレコード数を確認
 	pagination, _ := model.NewPagination("100", "")
 	project1Records, err := store.ListRecords(context.Background(), &ListRecordsParams{
-		ProjectID:  project1.ID,
+		ProjectID:  project1.ID.ToInt64(),
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
 		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
 		Pagination: pagination,
@@ -428,14 +428,14 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1を削除
-	err = store.DeleteProject(context.Background(), project1.ID)
+	err = store.DeleteProject(context.Background(), project1.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to delete project: %v", err)
 	}
 
 	// プロジェクト1のレコードが存在しなくなっていることを確認
 	project1RecordsAfter, err := store.ListRecords(context.Background(), &ListRecordsParams{
-		ProjectID:  project1.ID,
+		ProjectID:  project1.ID.ToInt64(),
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
 		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
 		Pagination: pagination,
@@ -449,14 +449,14 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト1のエンティティが削除されていることを確認
-	_, err = store.GetProject(context.Background(), project1.ID)
+	_, err = store.GetProject(context.Background(), project1.ID.ToInt64())
 	if err == nil {
 		t.Errorf("Expected error when getting deleted project, got nil")
 	}
 
 	// プロジェクト2のレコードが残っていることを確認
 	project2Records, err := store.ListRecords(context.Background(), &ListRecordsParams{
-		ProjectID:  project2.ID,
+		ProjectID:  project2.ID.ToInt64(),
 		From:       time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
 		To:         time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
 		Pagination: pagination,
@@ -470,7 +470,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// プロジェクト2のエンティティが残っていることを確認
-	_, err = store.GetProject(context.Background(), project2.ID)
+	_, err = store.GetProject(context.Background(), project2.ID.ToInt64())
 	if err != nil {
 		t.Errorf("Expected project2 to still exist, got error: %v", err)
 	}
@@ -524,37 +524,37 @@ func TestListRecordsWithTags(t *testing.T) {
 			name:          "Filter by work tag",
 			tags:          []string{"work"},
 			expectedCount: 2,
-			expectedIDs:   []int64{record1.ID, record3.ID},
+			expectedIDs:   []int64{record1.ID.ToInt64(), record3.ID.ToInt64()},
 		},
 		{
 			name:          "Filter by personal tag",
 			tags:          []string{"personal"},
 			expectedCount: 2,
-			expectedIDs:   []int64{record2.ID, record4.ID},
+			expectedIDs:   []int64{record2.ID.ToInt64(), record4.ID.ToInt64()},
 		},
 		{
 			name:          "Filter by urgent tag",
 			tags:          []string{"urgent"},
 			expectedCount: 2,
-			expectedIDs:   []int64{record1.ID, record4.ID},
+			expectedIDs:   []int64{record1.ID.ToInt64(), record4.ID.ToInt64()},
 		},
 		{
 			name:          "Filter by multiple tags (AND - both work and urgent)",
 			tags:          []string{"work", "urgent"},
 			expectedCount: 1,
-			expectedIDs:   []int64{record1.ID},
+			expectedIDs:   []int64{record1.ID.ToInt64()},
 		},
 		{
 			name:          "Filter by multiple tags (AND - both personal and urgent)",
 			tags:          []string{"personal", "urgent"},
 			expectedCount: 1,
-			expectedIDs:   []int64{record4.ID},
+			expectedIDs:   []int64{record4.ID.ToInt64()},
 		},
 		{
 			name:          "Filter by multiple tags (AND - work and meeting)",
 			tags:          []string{"work", "meeting"},
 			expectedCount: 1,
-			expectedIDs:   []int64{record3.ID},
+			expectedIDs:   []int64{record3.ID.ToInt64()},
 		},
 		{
 			name:          "Filter by non-existent tag",
@@ -572,7 +572,7 @@ func TestListRecordsWithTags(t *testing.T) {
 			name:          "Filter by empty tags",
 			tags:          []string{},
 			expectedCount: 4,
-			expectedIDs:   []int64{record1.ID, record2.ID, record3.ID, record4.ID},
+			expectedIDs:   []int64{record1.ID.ToInt64(), record2.ID.ToInt64(), record3.ID.ToInt64(), record4.ID.ToInt64()},
 		},
 	}
 
@@ -585,7 +585,7 @@ func TestListRecordsWithTags(t *testing.T) {
 			// タグフィルタでレコードを取得
 			pagination, _ := model.NewPagination("100", "")
 			records, err := store.ListRecords(context.Background(), &ListRecordsParams{
-				ProjectID:  project.ID,
+				ProjectID:  project.ID.ToInt64(),
 				From:       fromTime,
 				To:         toTime,
 				Pagination: pagination,
@@ -603,7 +603,7 @@ func TestListRecordsWithTags(t *testing.T) {
 			// IDが期待されるものと一致するかチェック
 			actualIDs := make(map[int64]bool)
 			for _, record := range records {
-				actualIDs[record.ID] = true
+				actualIDs[record.ID.ToInt64()] = true
 			}
 
 			for _, expectedID := range tc.expectedIDs {
@@ -620,7 +620,7 @@ func TestListRecordsWithTags(t *testing.T) {
 				// 全てのフィルタタグがレコードに含まれているか確認
 				for _, filterTag := range tc.tags {
 					if !slices.Contains(record.Tags, filterTag) {
-						t.Errorf("Record %d does not have required tag '%s' from filter tags %v", record.ID, filterTag, tc.tags)
+						t.Errorf("Record %d does not have required tag '%s' from filter tags %v", record.ID.ToInt64(), filterTag, tc.tags)
 					}
 				}
 			}
@@ -657,7 +657,7 @@ func TestListRecordsWithTagsEmptyResult(t *testing.T) {
 	toTime := baseTime.Add(1 * time.Hour)
 	pagination, _ := model.NewPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
-		ProjectID:  project.ID,
+		ProjectID:  project.ID.ToInt64(),
 		From:       fromTime,
 		To:         toTime,
 		Pagination: pagination,
@@ -706,7 +706,7 @@ func TestListRecordsDateRange(t *testing.T) {
 	toTime := baseTime.Add(25 * time.Hour)
 	pagination, _ := model.NewPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
-		ProjectID:  project.ID,
+		ProjectID:  project.ID.ToInt64(),
 		From:       fromTime,
 		To:         toTime,
 		Pagination: pagination,
@@ -722,10 +722,10 @@ func TestListRecordsDateRange(t *testing.T) {
 	}
 
 	// 正しいレコードが取得されることを確認
-	expectedIDs := map[int64]bool{record1.ID: true, record2.ID: true}
+	expectedIDs := map[int64]bool{record1.ID.ToInt64(): true, record2.ID.ToInt64(): true}
 	for _, record := range records {
-		if !expectedIDs[record.ID] {
-			t.Errorf("Unexpected record ID %d in results", record.ID)
+		if !expectedIDs[record.ID.ToInt64()] {
+			t.Errorf("Unexpected record ID %d in results", record.ID.ToInt64())
 		}
 	}
 }
@@ -748,18 +748,19 @@ func TestCreateProject(t *testing.T) {
 	}
 
 	// プロジェクトを取得して確認
-	retrievedProject, err := store.GetProject(context.Background(), project.ID)
+	retrievedProject, err := store.GetProject(context.Background(), project.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to get project: %v", err)
 	}
 
 	// 内容の確認
-	// DBで自動生成されたIDは0以上であるべき（project.IDは0のまま）
-	if retrievedProject.ID < 0 {
-		t.Errorf("Expected ID > 0, got %d", retrievedProject.ID)
+	// DBで自動生成されたIDは有効な値であるべき
+	if !retrievedProject.ID.IsValid() {
+		t.Errorf("Expected retrieved project ID to be valid (auto-generated)")
 	}
-	if project.ID < 0 {
-		t.Errorf("Expected original project ID to remain 0, got %d", project.ID)
+	// CreateProjectは元のprojectオブジェクトのIDも更新する
+	if !project.ID.IsValid() {
+		t.Errorf("Expected original project ID to be updated with auto-generated ID")
 	}
 	if retrievedProject.Name != project.Name {
 		t.Errorf("Expected name %s, got %s", project.Name, retrievedProject.Name)
@@ -843,7 +844,7 @@ func TestUpdateProject(t *testing.T) {
 	}
 
 	// 更新されたプロジェクトを再取得
-	updatedProject, err := store.GetProject(context.Background(), project.ID)
+	updatedProject, err := store.GetProject(context.Background(), project.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to get updated project: %v", err)
 	}
@@ -892,13 +893,13 @@ func TestDeleteProjectEntity(t *testing.T) {
 	}
 
 	// プロジェクトエンティティを削除
-	err = store.DeleteProject(context.Background(), project.ID)
+	err = store.DeleteProject(context.Background(), project.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to delete project entity: %v", err)
 	}
 
 	// プロジェクトが削除されたことを確認
-	_, err = store.GetProject(context.Background(), project.ID)
+	_, err = store.GetProject(context.Background(), project.ID.ToInt64())
 	if err == nil {
 		t.Error("Expected error when getting deleted project, got nil")
 	}
@@ -988,7 +989,7 @@ func TestRecordProjectReferentialIntegrity(t *testing.T) {
 
 	// 存在しないプロジェクトIDでレコードを作成しようとする
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.Local)
-	record, err := model.NewRecord(timestamp, int64(99999), 1, []string{"test"})
+	record, err := model.NewRecord(timestamp, model.NewHexID(99999), 1, []string{"test"})
 	if err != nil {
 		t.Fatalf("Failed to create record model: %v", err)
 	}
@@ -1048,7 +1049,7 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 	}
 
 	// プロジェクトエンティティを削除
-	err = store.DeleteProject(context.Background(), project.ID)
+	err = store.DeleteProject(context.Background(), project.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to delete project entity: %v", err)
 	}
@@ -1056,7 +1057,7 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 	// ON DELETE CASCADEにより、プロジェクト削除時にレコードも自動削除される
 	pagination, _ := model.NewPagination("100", "")
 	records, err := store.ListRecords(context.Background(), &ListRecordsParams{
-		ProjectID:  project.ID,
+		ProjectID:  project.ID.ToInt64(),
 		From:       timestamp.Add(-1 * time.Hour),
 		To:         timestamp.Add(1 * time.Hour),
 		Pagination: pagination,
@@ -1072,7 +1073,7 @@ func TestProjectDeletionWithOrphanedRecords(t *testing.T) {
 	}
 
 	// レコードを直接取得してもnot foundエラーになるはず
-	_, err = store.GetRecord(context.Background(), record.ID)
+	_, err = store.GetRecord(context.Background(), record.ID.ToInt64())
 	if err == nil {
 		t.Error("Expected error (not found) for deleted record, got nil")
 	}
@@ -1114,7 +1115,7 @@ func TestUpdateRecordWithInvalidProject(t *testing.T) {
 	}
 
 	// project2を削除
-	err = store.DeleteProject(context.Background(), project2.ID)
+	err = store.DeleteProject(context.Background(), project2.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to delete project2: %v", err)
 	}
@@ -1162,7 +1163,7 @@ func TestGetProjectTags(t *testing.T) {
 	}
 
 	// プロジェクトのタグ一覧を取得
-	tags, err := store.GetProjectTags(context.Background(), project.ID)
+	tags, err := store.GetProjectTags(context.Background(), project.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to get project tags: %v", err)
 	}
@@ -1221,7 +1222,7 @@ func TestGetProjectTagsEmptyProject(t *testing.T) {
 	}
 
 	// プロジェクトのタグ一覧を取得（空配列が返されるはず）
-	tags, err := store.GetProjectTags(context.Background(), project.ID)
+	tags, err := store.GetProjectTags(context.Background(), project.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to get project tags: %v", err)
 	}
@@ -1261,7 +1262,7 @@ func TestGetProjectTagsWithMultipleRecords(t *testing.T) {
 	}
 
 	// プロジェクトのタグ一覧を取得
-	tags, err := store.GetProjectTags(context.Background(), project.ID)
+	tags, err := store.GetProjectTags(context.Background(), project.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to get project tags: %v", err)
 	}
@@ -1322,7 +1323,7 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 
 	// データベースから全レコードを取得して期待値の配列を作成（timestamp DESC順）
 	allRecordsParams := &ListRecordsParams{
-		ProjectID:  project.ID,
+		ProjectID:  project.ID.ToInt64(),
 		From:       baseTime.AddDate(0, 0, -1),
 		To:         baseTime.AddDate(0, 0, 1),
 		Pagination: model.NewPaginationWithValues(100, nil),
@@ -1338,7 +1339,7 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 	// ケース1: 最初のページを取得（limit=3, cursorなし）
 	t.Run("First page without cursor", func(t *testing.T) {
 		params := &ListRecordsParams{
-			ProjectID:  project.ID,
+			ProjectID:  project.ID.ToInt64(),
 			From:       baseTime.AddDate(0, 0, -1),
 			To:         baseTime.AddDate(0, 0, 1),
 			Pagination: model.NewPaginationWithValues(3, nil),
@@ -1355,9 +1356,9 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 
 		// 最初の3件が取得されているか確認（降順なので最新の3件）
 		for i := 0; i < 3; i++ {
-			if records[i].ID != allRecords[i].ID {
+			if !records[i].ID.Equals(allRecords[i].ID) {
 				t.Errorf("Record at index %d has incorrect ID. Expected %d, got %d",
-					i, allRecords[i].ID, records[i].ID)
+					i, allRecords[i].ID.ToInt64(), records[i].ID.ToInt64())
 			}
 		}
 	})
@@ -1368,10 +1369,10 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 		// 3番目のレコード（allRecords[2]）の後から取得
 		cursorRecord := allRecords[2]
 		cursorTimestamp := cursorRecord.Timestamp
-		cursorID := cursorRecord.ID
+		cursorID := cursorRecord.ID.ToInt64()
 
 		params := &ListRecordsParams{
-			ProjectID:       project.ID,
+			ProjectID:       project.ID.ToInt64(),
 			From:            baseTime.AddDate(0, 0, -1),
 			To:              baseTime.AddDate(0, 0, 1),
 			Pagination:      model.NewPaginationWithValues(3, nil),
@@ -1392,15 +1393,15 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 		// カーソルの次のレコード（allRecords[3], [4], [5]）が返されるべき
 		for i := 0; i < 3; i++ {
 			expectedIndex := i + 3
-			if records[i].ID != allRecords[expectedIndex].ID {
+			if !records[i].ID.Equals(allRecords[expectedIndex].ID) {
 				t.Errorf("Record at index %d on second page has incorrect ID. Expected %d (from allRecords[%d]), got %d",
-					i, allRecords[expectedIndex].ID, expectedIndex, records[i].ID)
+					i, allRecords[expectedIndex].ID.ToInt64(), expectedIndex, records[i].ID.ToInt64())
 			}
 		}
 
 		// バグがある場合: 1ページ目と同じレコードが返される
 		// このチェックでバグを明示的に検出
-		if len(records) > 0 && records[0].ID == allRecords[0].ID {
+		if len(records) > 0 && records[0].ID.Equals(allRecords[0].ID) {
 			t.Error("BUG DETECTED: Second page returned same records as first page. Cursor is not working!")
 		}
 	})
@@ -1409,10 +1410,10 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 	t.Run("Last record as cursor", func(t *testing.T) {
 		lastRecord := allRecords[len(allRecords)-1]
 		cursorTimestamp := lastRecord.Timestamp
-		cursorID := lastRecord.ID
+		cursorID := lastRecord.ID.ToInt64()
 
 		params := &ListRecordsParams{
-			ProjectID:       project.ID,
+			ProjectID:       project.ID.ToInt64(),
 			From:            baseTime.AddDate(0, 0, -1),
 			To:              baseTime.AddDate(0, 0, 1),
 			Pagination:      model.NewPaginationWithValues(5, nil),
@@ -1513,14 +1514,14 @@ func TestListProjectsWithCursorPagination(t *testing.T) {
 		// 2ページ目は1ページ目と異なるプロジェクトであるべき
 		for i := 0; i < 3; i++ {
 			expectedIndex := i + 3
-			if projects[i].ID != allProjects[expectedIndex].ID {
+			if !projects[i].ID.Equals(allProjects[expectedIndex].ID) {
 				t.Errorf("Project at index %d on second page has incorrect ID. Expected %d (from allProjects[%d]), got %d",
-					i, allProjects[expectedIndex].ID, expectedIndex, projects[i].ID)
+					i, allProjects[expectedIndex].ID.ToInt64(), expectedIndex, projects[i].ID.ToInt64())
 			}
 		}
 
 		// バグがある場合: 1ページ目と同じプロジェクトが返される
-		if len(projects) > 0 && projects[0].ID == allProjects[0].ID {
+		if len(projects) > 0 && projects[0].ID.Equals(allProjects[0].ID) {
 			t.Error("BUG DETECTED: Second page returned same projects as first page. Cursor is not working!")
 		}
 	})
@@ -1560,7 +1561,7 @@ func TestListAllRecordsWithPagination(t *testing.T) {
 
 	// ListAllRecordsを使って全レコードを取得
 	params := &ListAllRecordsParams{
-		ProjectID: project.ID,
+		ProjectID: project.ID.ToInt64(),
 		From:      baseTime.AddDate(0, 0, -1),
 		To:        baseTime.AddDate(0, 0, 2),
 		Tags:      nil,
@@ -1575,7 +1576,7 @@ func TestListAllRecordsWithPagination(t *testing.T) {
 		}
 
 		// 重複チェック（カーソルが機能していない場合、同じレコードが繰り返される）
-		recordID := record.ID
+		recordID := record.ID.ToInt64()
 		if seenIDs[recordID] {
 			t.Errorf("DUPLICATE DETECTED: Record ID %d appeared more than once. Cursor pagination is broken!", recordID)
 		}

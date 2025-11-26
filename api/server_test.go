@@ -51,8 +51,8 @@ func (m *MockStore) CreateRecord(ctx context.Context, record *model.Record) erro
 		return err
 	}
 	// IDを自動生成
-	record.ID = int64(len(m.records) + 1)
-	m.records[record.ID] = record
+	record.ID = model.NewHexID(int64(len(m.records) + 1))
+	m.records[record.ID.ToInt64()] = record
 	return nil
 }
 
@@ -68,11 +68,11 @@ func (m *MockStore) UpdateRecord(ctx context.Context, record *model.Record) erro
 	if err := record.Validate(); err != nil {
 		return err
 	}
-	_, exists := m.records[record.ID]
+	_, exists := m.records[record.ID.ToInt64()]
 	if !exists {
 		return fmt.Errorf("record not found")
 	}
-	m.records[record.ID] = record
+	m.records[record.ID.ToInt64()] = record
 	return nil
 }
 
@@ -90,7 +90,7 @@ func (m *MockStore) ListRecords(ctx context.Context, params *store.ListRecordsPa
 
 	for _, r := range m.records {
 		// プロジェクトフィルタ
-		if r.ProjectID != params.ProjectID {
+		if r.ProjectID.ToInt64() != params.ProjectID {
 			continue
 		}
 
@@ -132,7 +132,7 @@ func (m *MockStore) ListRecords(ctx context.Context, params *store.ListRecordsPa
 	if params.CursorTimestamp != nil && params.CursorID != nil {
 		for i, r := range records {
 			// timestamp と ID の組み合わせで位置を特定
-			if r.Timestamp.Equal(*params.CursorTimestamp) && r.ID == *params.CursorID {
+			if r.Timestamp.Equal(*params.CursorTimestamp) && r.ID.ToInt64() == *params.CursorID {
 				startIndex = i + 1 // カーソルの次から開始
 				break
 			}
@@ -152,7 +152,7 @@ func (m *MockStore) ListAllRecords(ctx context.Context, params *store.ListAllRec
 		var records []*model.Record
 
 		for _, r := range m.records {
-			if r.ProjectID != params.ProjectID || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
+			if r.ProjectID.ToInt64() != params.ProjectID || r.Timestamp.Before(params.From) || r.Timestamp.After(params.To) {
 				continue
 			}
 
@@ -199,7 +199,7 @@ func (m *MockStore) Close() error {
 func (m *MockStore) DeleteProject(ctx context.Context, projectID int64) error {
 	// 指定されたプロジェクトのレコードをすべて削除
 	for id, record := range m.records {
-		if record.ProjectID == projectID {
+		if record.ProjectID.ToInt64() == projectID {
 			delete(m.records, id)
 		}
 	}
@@ -214,7 +214,7 @@ func (m *MockStore) DeleteRecordsUntil(ctx context.Context, projectID int64, unt
 
 	for id, record := range m.records {
 		// プロジェクト指定がない、または一致するプロジェクトかつ指定日時より前
-		if (projectID == 0 || record.ProjectID == projectID) && record.Timestamp.Before(until) {
+		if (projectID == 0 || record.ProjectID.ToInt64() == projectID) && record.Timestamp.Before(until) {
 			idsToDelete = append(idsToDelete, id)
 		}
 	}
@@ -230,8 +230,8 @@ func (m *MockStore) DeleteRecordsUntil(ctx context.Context, projectID int64, unt
 
 func (m *MockStore) CreateProject(ctx context.Context, project *model.Project) error {
 	// IDを自動生成
-	project.ID = int64(len(m.projects) + 1)
-	m.projects[project.ID] = project
+	project.ID = model.NewHexID(int64(len(m.projects) + 1))
+	m.projects[project.ID.ToInt64()] = project
 	return nil
 }
 
@@ -244,10 +244,10 @@ func (m *MockStore) GetProject(ctx context.Context, id int64) (*model.Project, e
 }
 
 func (m *MockStore) UpdateProject(ctx context.Context, project *model.Project) error {
-	if _, exists := m.projects[project.ID]; !exists {
+	if _, exists := m.projects[project.ID.ToInt64()]; !exists {
 		return errors.New("project not found")
 	}
-	m.projects[project.ID] = project
+	m.projects[project.ID.ToInt64()] = project
 	return nil
 }
 
@@ -304,7 +304,7 @@ func (m *MockStore) GetProjectTags(ctx context.Context, projectID int64) ([]stri
 	// プロジェクトのレコードからユニークなタグを収集
 	tagSet := make(map[string]bool)
 	for _, record := range m.records {
-		if record.ProjectID == projectID {
+		if record.ProjectID.ToInt64() == projectID {
 			for _, tag := range record.Tags {
 				tagSet[tag] = true
 			}
@@ -374,8 +374,8 @@ func TestCreateRecordEndpoint(t *testing.T) {
 	}
 
 	// プロジェクト名の確認
-	if responseRecord.ProjectID != projectID {
-		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
+	if !responseRecord.ProjectID.Equals(projectID) {
+		t.Errorf("Expected Project %016x, got %016x", projectID.ToInt64(), responseRecord.ProjectID.ToInt64())
 	}
 
 	expectedValue := reqBody["value"]
@@ -446,8 +446,8 @@ func TestCreateRecordWithoutTimestamp(t *testing.T) {
 	t.Logf("自動設定されたTimestamp: %v", responseRecord.Timestamp)
 
 	// プロジェクト名の確認
-	if responseRecord.ProjectID != projectID {
-		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
+	if !responseRecord.ProjectID.Equals(projectID) {
+		t.Errorf("Expected Project %016x, got %016x", projectID.ToInt64(), responseRecord.ProjectID.ToInt64())
 	}
 
 	// 値の確認
@@ -509,8 +509,8 @@ func TestCreateRecordWithoutValue(t *testing.T) {
 	}
 
 	// プロジェクト名の確認
-	if responseRecord.ProjectID != projectID {
-		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
+	if !responseRecord.ProjectID.Equals(projectID) {
+		t.Errorf("Expected Project %016x, got %016x", projectID.ToInt64(), responseRecord.ProjectID.ToInt64())
 	}
 
 	// デフォルト値の確認
@@ -573,8 +573,8 @@ func TestCreateRecordWithEmptyBody(t *testing.T) {
 	}
 
 	// プロジェクト名の確認
-	if responseRecord.ProjectID != projectID {
-		t.Errorf("Expected Project %d, got %d", projectID, responseRecord.ProjectID)
+	if !responseRecord.ProjectID.Equals(projectID) {
+		t.Errorf("Expected Project %016x, got %016x", projectID.ToInt64(), responseRecord.ProjectID.ToInt64())
 	}
 
 	// デフォルト値の確認
@@ -590,7 +590,7 @@ func TestCreateRecordWithNonExistentProject(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// 存在しないproject_idを指定してレコード作成を試みる
-	nonExistentProjectID := int64(9999)
+	nonExistentProjectID := model.NewHexID(9999)
 	reqBody := map[string]any{
 		"project_id": nonExistentProjectID,
 		"timestamp":  "2025-05-21T14:30:00Z",
@@ -638,7 +638,7 @@ func TestGetRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストの作成 - 新しいURLパスを使用
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -662,16 +662,16 @@ func TestGetRecordEndpoint(t *testing.T) {
 	t.Logf("Test record: %+v", testRecord)
 	t.Logf("Response record: %+v", responseRecord)
 
-	if responseRecord.ID != testRecord.ID {
-		t.Errorf("Expected ID %d, got %d", testRecord.ID, responseRecord.ID)
+	if !responseRecord.ID.Equals(testRecord.ID) {
+		t.Errorf("Expected ID %016x, got %016x", testRecord.ID.ToInt64(), responseRecord.ID.ToInt64())
 	}
 
 	if !responseRecord.Timestamp.Equal(testRecord.Timestamp) {
 		t.Errorf("Expected Timestamp %v, got %v", testRecord.Timestamp, responseRecord.Timestamp)
 	}
 
-	if responseRecord.ProjectID != testRecord.ProjectID {
-		t.Errorf("Expected Project %d, got %d", testRecord.ProjectID, responseRecord.ProjectID)
+	if !responseRecord.ProjectID.Equals(testRecord.ProjectID) {
+		t.Errorf("Expected Project %d, got %d", testRecord.ProjectID.ToInt64(), responseRecord.ProjectID.ToInt64())
 	}
 
 	t.Logf("Expected value: %d, Response value: %d", testRecord.Value, responseRecord.Value)
@@ -687,7 +687,7 @@ func TestGetNonExistentRecordEndpoint(t *testing.T) {
 
 	// 存在しないIDでリクエスト
 	nonExistentID := int64(9999)
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%d", nonExistentID), nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v0/r/%016x", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -711,7 +711,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 
 	// テスト用のレコードを作成
 	timestamp := time.Date(2025, 5, 21, 14, 30, 0, 0, time.UTC)
-	testRecord, err := model.NewRecord(timestamp, projectID, 1, nil)
+	testRecord, err := model.NewRecord(timestamp, model.NewHexID(projectID), 1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test record: %v", err)
 	}
@@ -720,7 +720,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	server := NewServer(mockStore, newTestConfig())
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), nil)
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -735,7 +735,7 @@ func TestDeleteRecordEndpoint(t *testing.T) {
 	}
 
 	// レコードが実際に削除されたことを確認
-	_, err = mockStore.GetRecord(context.Background(), testRecord.ID)
+	_, err = mockStore.GetRecord(context.Background(), testRecord.ID.ToInt64())
 	if err == nil {
 		t.Error("Record should have been deleted, but it still exists")
 	}
@@ -748,7 +748,7 @@ func TestDeleteNonExistentRecordEndpoint(t *testing.T) {
 
 	// 存在しないIDでリクエスト
 	nonExistentID := int64(9999)
-	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%d", nonExistentID), nil)
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v0/r/%016x", nonExistentID), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	// レスポンスレコーダーの作成
@@ -792,7 +792,7 @@ func TestUpdateRecordEndpoint(t *testing.T) {
 	reqBytes, _ := json.Marshal(updateData)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -831,11 +831,11 @@ func TestUpdateRecordEndpoint(t *testing.T) {
 	}
 
 	// レコードIDとプロジェクトIDは変わらないことを確認
-	if responseRecord.ID != testRecord.ID {
-		t.Errorf("Expected ID %d, got %d", testRecord.ID, responseRecord.ID)
+	if !responseRecord.ID.Equals(testRecord.ID) {
+		t.Errorf("Expected ID %016x, got %016x", testRecord.ID.ToInt64(), responseRecord.ID.ToInt64())
 	}
-	if responseRecord.ProjectID != projectID {
-		t.Errorf("Expected ProjectID %d, got %d", projectID, responseRecord.ProjectID)
+	if !responseRecord.ProjectID.Equals(projectID) {
+		t.Errorf("Expected ProjectID %016x, got %016x", projectID.ToInt64(), responseRecord.ProjectID.ToInt64())
 	}
 }
 
@@ -863,7 +863,7 @@ func TestUpdateRecordPartialFields(t *testing.T) {
 		}
 		reqBytes, _ := json.Marshal(updateData)
 
-		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), bytes.NewBuffer(reqBytes))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -901,7 +901,7 @@ func TestUpdateRecordPartialFields(t *testing.T) {
 		}
 		reqBytes, _ := json.Marshal(updateData)
 
-		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), bytes.NewBuffer(reqBytes))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -939,7 +939,7 @@ func TestUpdateRecordPartialFields(t *testing.T) {
 		}
 		reqBytes, _ := json.Marshal(updateData)
 
-		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), bytes.NewBuffer(reqBytes))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -977,7 +977,7 @@ func TestUpdateRecordPartialFields(t *testing.T) {
 		}
 		reqBytes, _ := json.Marshal(updateData)
 
-		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), bytes.NewBuffer(reqBytes))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1010,7 +1010,7 @@ func TestUpdateNonExistentRecord(t *testing.T) {
 	}
 	reqBytes, _ := json.Marshal(updateData)
 
-	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", nonExistentID), bytes.NewBuffer(reqBytes))
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", nonExistentID), bytes.NewBuffer(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -1045,7 +1045,7 @@ func TestUpdateRecordWithInvalidData(t *testing.T) {
 		}
 		reqBytes, _ := json.Marshal(updateData)
 
-		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%d", testRecord.ID), bytes.NewBuffer(reqBytes))
+		req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v0/r/%016x", testRecord.ID.ToInt64()), bytes.NewBuffer(reqBytes))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1103,7 +1103,7 @@ func TestGetGraphEndpoint(t *testing.T) {
 
 	// 別プロジェクトのレコード (グラフに含まれないはず)
 	timestamp4 := time.Date(2025, 5, 22, 10, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, int64(43), 5, nil)
+	record4, _ := model.NewRecord(timestamp4, model.NewHexID(43), 5, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -1112,7 +1112,7 @@ func TestGetGraphEndpoint(t *testing.T) {
 	fromDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 31, 23, 59, 59, 0, time.UTC)
 	url := fmt.Sprintf("/p/%d/graph?from=%s&to=%s",
-		projectID,
+		projectID.ToInt64(),
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -1170,7 +1170,7 @@ func TestGetGraphEndpointWithoutData(t *testing.T) {
 	fromDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 31, 23, 59, 59, 0, time.UTC)
 	url := fmt.Sprintf("/p/%d/graph?from=%s&to=%s",
-		projectID,
+		projectID.ToInt64(),
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -1229,7 +1229,7 @@ func TestListRecordsEndpoint(t *testing.T) {
 
 	// 別のプロジェクトのレコード（取得されないはず）
 	timestamp4 := time.Date(2025, 5, 23, 16, 0, 0, 0, time.UTC)
-	record4, _ := model.NewRecord(timestamp4, int64(43), 4, nil)
+	record4, _ := model.NewRecord(timestamp4, model.NewHexID(43), 4, nil)
 	mockStore.CreateRecord(context.Background(), record4)
 
 	server := NewServer(mockStore, newTestConfig())
@@ -1237,8 +1237,8 @@ func TestListRecordsEndpoint(t *testing.T) {
 	// リクエストの作成 - 日付範囲を指定
 	fromDate := time.Date(2025, 5, 15, 0, 0, 0, 0, time.UTC)
 	toDate := time.Date(2025, 5, 25, 23, 59, 59, 0, time.UTC)
-	url := fmt.Sprintf("/api/v0/r?project_id=%d&from=%s&to=%s",
-		projectID,
+	url := fmt.Sprintf("/api/v0/r?project_id=%016x&from=%s&to=%s",
+		projectID.ToInt64(),
 		fromDate.Format(time.RFC3339),
 		toDate.Format(time.RFC3339))
 	req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -1275,22 +1275,22 @@ func TestListRecordsEndpoint(t *testing.T) {
 	// recordsMap は検証のためにIDベースでレコードにアクセスできるマップ
 	recordsMap := make(map[int64]*model.Record)
 	for _, r := range items {
-		recordsMap[r.ID] = r
+		recordsMap[r.ID.ToInt64()] = r
 	}
 
 	// 期待されるレコードが含まれているか確認
-	if _, ok := recordsMap[record1.ID]; !ok {
+	if _, ok := recordsMap[record1.ID.ToInt64()]; !ok {
 		t.Errorf("Record 1 missing from response")
 	}
-	if _, ok := recordsMap[record2.ID]; !ok {
+	if _, ok := recordsMap[record2.ID.ToInt64()]; !ok {
 		t.Errorf("Record 2 missing from response")
 	}
-	if _, ok := recordsMap[record3.ID]; !ok {
+	if _, ok := recordsMap[record3.ID.ToInt64()]; !ok {
 		t.Errorf("Record 3 missing from response")
 	}
 
 	// 別のプロジェクトのレコードが含まれていないことを確認
-	if _, ok := recordsMap[record4.ID]; ok {
+	if _, ok := recordsMap[record4.ID.ToInt64()]; ok {
 		t.Errorf("Record 4 from another project should not be included")
 	}
 }
@@ -1319,7 +1319,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 
 	// ケース1: limit=3 で最初の3件を取得（カーソルなし）
 	t.Run("First Page", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/r?limit=3&project_id=%d", projectID)
+		url := fmt.Sprintf("/api/v0/r?limit=3&project_id=%016x", projectID.ToInt64())
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1341,8 +1341,8 @@ func TestListRecordsWithPagination(t *testing.T) {
 		} else {
 			// 最初の3件のレコードが正しいか確認
 			for i := range 3 {
-				if records[i].ID != allRecords[i].ID {
-					t.Errorf("Record at index %d has incorrect ID", i)
+				if !records[i].ID.Equals(allRecords[i].ID) {
+					t.Errorf("Record at index %d has incorrect ID, expected %016x, got %016x", i, allRecords[i].ID.ToInt64(), records[i].ID.ToInt64())
 				}
 			}
 		}
@@ -1366,7 +1366,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 			time.Time{}, // to
 			nil,         // tags
 		)
-		url := fmt.Sprintf("/api/v0/r?limit=4&project_id=%d&cursor=%s", projectID, cursor)
+		url := fmt.Sprintf("/api/v0/r?limit=4&project_id=%016x&cursor=%s", projectID.ToInt64(), cursor)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1390,9 +1390,9 @@ func TestListRecordsWithPagination(t *testing.T) {
 			// カーソルの次のレコードから4件が返されることを確認
 			for i := range 4 {
 				expectedIndex := i + 3 // allRecords[3], [4], [5], [6]
-				if items[i].ID != allRecords[expectedIndex].ID {
-					t.Errorf("Record at index %d has incorrect ID, expected %d, got %d",
-						i, allRecords[expectedIndex].ID, items[i].ID)
+				if !items[i].ID.Equals(allRecords[expectedIndex].ID) {
+					t.Errorf("Record at index %d has incorrect ID, expected %016x, got %016x",
+						i, allRecords[expectedIndex].ID.ToInt64(), items[i].ID.ToInt64())
 				}
 			}
 		}
@@ -1411,7 +1411,7 @@ func TestListRecordsWithPagination(t *testing.T) {
 			time.Time{}, // to
 			nil,         // tags
 		)
-		url := fmt.Sprintf("/api/v0/r?limit=5&project_id=%d&cursor=%s", projectID, cursor)
+		url := fmt.Sprintf("/api/v0/r?limit=5&project_id=%016x&cursor=%s", projectID.ToInt64(), cursor)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1448,12 +1448,12 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 
 	// テスト用にレコードを1件作成
 	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-	record, _ := model.NewRecord(baseTime, projectID, 1, nil)
+	record, _ := model.NewRecord(baseTime, model.NewHexID(projectID), 1, nil)
 	mockStore.CreateRecord(context.Background(), record)
 
 	// ケース1: 無効なlimit（非数値）
 	t.Run("Invalid limit (non-numeric)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/r?limit=abc&project_id=%d", projectID)
+		url := fmt.Sprintf("/api/v0/r?limit=abc&project_id=%016x", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1466,7 +1466,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 
 	// ケース2: 無効なlimit（負の数）
 	t.Run("Invalid limit (negative)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/r?limit=-10&project_id=%d", projectID)
+		url := fmt.Sprintf("/api/v0/r?limit=-10&project_id=%016x", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1479,7 +1479,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 
 	// ケース3: 無効なlimit（ゼロ）
 	t.Run("Invalid limit (zero)", func(t *testing.T) {
-		url := fmt.Sprintf("/api/v0/r?limit=0&project_id=%d", projectID)
+		url := fmt.Sprintf("/api/v0/r?limit=0&project_id=%016x", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1495,7 +1495,7 @@ func TestListRecordsWithInvalidPaginationParams(t *testing.T) {
 		// Base64エンコードされていない不正な形式のcursorを渡す
 		// 新しい実装では、API層でcursorをデコードするため、
 		// 不正な形式の場合は400 BadRequestが返される
-		url := fmt.Sprintf("/api/v0/r?cursor=non-existent-id&project_id=%d", projectID)
+		url := fmt.Sprintf("/api/v0/r?cursor=non-existent-id&project_id=%016x", projectID)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("X-API-Key", testAPIKey)
 		w := httptest.NewRecorder()
@@ -1518,24 +1518,24 @@ func TestDeleteProject(t *testing.T) {
 	timestamp := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	// プロジェクトにレコードを追加
-	rec1, err := model.NewRecord(timestamp, projectID, 10, nil)
+	rec1, err := model.NewRecord(timestamp, model.NewHexID(projectID), 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec1.ID] = rec1
+	mockStore.records[rec1.ID.ToInt64()] = rec1
 
-	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), projectID, 15, nil)
+	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), model.NewHexID(projectID), 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec2.ID] = rec2
+	mockStore.records[rec2.ID.ToInt64()] = rec2
 
 	// 別プロジェクトのレコードも追加
-	rec3, err := model.NewRecord(timestamp, int64(43), 20, nil)
+	rec3, err := model.NewRecord(timestamp, model.NewHexID(43), 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockStore.records[rec3.ID] = rec3
+	mockStore.records[rec3.ID.ToInt64()] = rec3
 
 	server := NewServer(mockStore, newTestConfig())
 
@@ -1567,7 +1567,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 
 	// 他のプロジェクトのレコードが削除されていないことを確認
-	_, err = mockStore.GetRecord(context.Background(), rec3.ID)
+	_, err = mockStore.GetRecord(context.Background(), rec3.ID.ToInt64())
 	if err != nil {
 		t.Errorf("Record from other project should not be deleted")
 	}
@@ -1611,7 +1611,7 @@ func TestHandleGetGraph(t *testing.T) {
 	mockStore.CreateRecord(context.Background(), record1)
 
 	// リクエストの作成
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%d/graph", projectID), nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%016x/graph", projectID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
@@ -1649,7 +1649,7 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	projectID := project.ID
 
 	// trackパラメータ付きのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%d/graph?track&tags=good", projectID), nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%016x/graph?track&tags=good", projectID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
@@ -1674,14 +1674,14 @@ func TestHandleGetGraphWithTrackParam(t *testing.T) {
 	// 追加されたレコードの内容を確認
 	var foundRecord *model.Record
 	for _, record := range mockStore.records {
-		if record.ProjectID == projectID {
+		if record.ProjectID.Equals(projectID) {
 			foundRecord = record
 			break
 		}
 	}
 
 	if foundRecord == nil {
-		t.Errorf("No record created for project %d", projectID)
+		t.Errorf("No record created for project %016x", projectID.ToInt64())
 		return
 	}
 
@@ -1743,7 +1743,7 @@ func TestHandleGetGraphSVGExtension(t *testing.T) {
 	projectID := project.ID
 
 	// .svg拡張子付きのリクエストを作成
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%d/graph.svg", projectID), nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/p/%016x/graph.svg", projectID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 
@@ -1766,8 +1766,8 @@ func TestHandleGetGraphSVGExtension(t *testing.T) {
 // TestBulkDeleteRecords はレコード一括削除APIのテスト
 func TestBulkDeleteRecords(t *testing.T) {
 	// プロジェクト名
-	project1 := int64(42)
-	project2 := int64(43)
+	project1 := model.NewHexID(42)
+	project2 := model.NewHexID(43)
 
 	// テスト用の基準日時
 	baseTime := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
@@ -1775,7 +1775,7 @@ func TestBulkDeleteRecords(t *testing.T) {
 	// テストケース
 	tests := []struct {
 		name           string
-		project        int64
+		project        model.HexID
 		until          time.Time
 		expectedStatus int
 		expectedCount  int
@@ -1959,7 +1959,7 @@ func TestCreateRecordWithTags(t *testing.T) {
 	}
 
 	// ストアに正しく保存されているかチェック
-	storedRecord, err := mockStore.GetRecord(context.Background(), responseRecord.ID)
+	storedRecord, err := mockStore.GetRecord(context.Background(), responseRecord.ID.ToInt64())
 	if err != nil {
 		t.Fatalf("Failed to get stored record: %v", err)
 	}
@@ -2019,10 +2019,10 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
 
 	// 異なるタグを持つレコードを作成
-	record1, _ := model.NewRecord(baseTime, projectID, 1, []string{"work", "urgent"})
-	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectID, 2, []string{"personal", "hobby"})
-	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), projectID, 3, []string{"work", "meeting"})
-	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), projectID, 4, []string{"personal", "urgent"})
+	record1, _ := model.NewRecord(baseTime, model.NewHexID(projectID), 1, []string{"work", "urgent"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), model.NewHexID(projectID), 2, []string{"personal", "hobby"})
+	record3, _ := model.NewRecord(baseTime.Add(2*time.Hour), model.NewHexID(projectID), 3, []string{"work", "meeting"})
+	record4, _ := model.NewRecord(baseTime.Add(3*time.Hour), model.NewHexID(projectID), 4, []string{"personal", "urgent"})
 
 	mockStore.CreateRecord(context.Background(), record1)
 	mockStore.CreateRecord(context.Background(), record2)
@@ -2038,25 +2038,25 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 		{
 			name:          "Filter by work tag",
 			tagsFilter:    "work",
-			expectedIDs:   []int64{record1.ID, record3.ID},
+			expectedIDs:   []int64{record1.ID.ToInt64(), record3.ID.ToInt64()},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by personal tag",
 			tagsFilter:    "personal",
-			expectedIDs:   []int64{record2.ID, record4.ID},
+			expectedIDs:   []int64{record2.ID.ToInt64(), record4.ID.ToInt64()},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by urgent tag (OR)",
 			tagsFilter:    "urgent",
-			expectedIDs:   []int64{record1.ID, record4.ID},
+			expectedIDs:   []int64{record1.ID.ToInt64(), record4.ID.ToInt64()},
 			expectedCount: 2,
 		},
 		{
 			name:          "Filter by multiple tags (OR)",
 			tagsFilter:    "work,hobby",
-			expectedIDs:   []int64{record1.ID, record2.ID, record3.ID},
+			expectedIDs:   []int64{record1.ID.ToInt64(), record2.ID.ToInt64(), record3.ID.ToInt64()},
 			expectedCount: 3,
 		},
 		{
@@ -2069,7 +2069,7 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			url := fmt.Sprintf("/api/v0/r?project_id=%d&tags=%s", projectID, tc.tagsFilter)
+			url := fmt.Sprintf("/api/v0/r?project_id=%016x&tags=%s", projectID, tc.tagsFilter)
 			req := httptest.NewRequest(http.MethodGet, url, nil)
 			req.Header.Set("X-API-Key", testAPIKey)
 
@@ -2093,12 +2093,12 @@ func TestListRecordsWithTagsFilter(t *testing.T) {
 			// IDが期待されるものと一致するかチェック
 			actualIDs := make(map[int64]bool)
 			for _, item := range items {
-				actualIDs[item.ID] = true
+				actualIDs[item.ID.ToInt64()] = true
 			}
 
 			for _, expectedID := range tc.expectedIDs {
 				if !actualIDs[expectedID] {
-					t.Errorf("Expected record with ID %d not found in results", expectedID)
+					t.Errorf("Expected record with ID %016x not found in results", expectedID)
 				}
 			}
 		})
@@ -2127,7 +2127,7 @@ func TestGetGraphWithTagsFilter(t *testing.T) {
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// workタグでフィルタしたヒートマップ生成
-	url := fmt.Sprintf("/p/%d/graph.svg?tags=work", projectID)
+	url := fmt.Sprintf("/p/%016x/graph.svg?tags=work", projectID.ToInt64())
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -2219,7 +2219,7 @@ func TestGetProjectEndpoint(t *testing.T) {
 	projectID := project.ID
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d", projectID), nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%016x", projectID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2283,7 +2283,7 @@ func TestUpdateProjectEndpoint(t *testing.T) {
 	}
 
 	requestBody, _ := json.Marshal(updateData)
-	req, _ := http.NewRequest("PUT", fmt.Sprintf("/api/v0/p/%d", projectID), bytes.NewBuffer(requestBody))
+	req, _ := http.NewRequest("PUT", fmt.Sprintf("/api/v0/p/%016x", projectID.ToInt64()), bytes.NewBuffer(requestBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", testAPIKey)
 
@@ -2360,7 +2360,7 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 	mockStore.CreateRecord(context.Background(), record)
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("DELETE", fmt.Sprintf("/api/v0/p/%d", projectID), nil)
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("/api/v0/p/%016x", projectID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2374,7 +2374,7 @@ func TestDeleteProjectEndpoint(t *testing.T) {
 	// レコードが削除されたことを確認
 	pagination, _ := model.NewPagination("100", "")
 	records, _ := mockStore.ListRecords(context.Background(), &store.ListRecordsParams{
-		ProjectID:  projectID,
+		ProjectID:  projectID.ToInt64(),
 		From:       time.Now().Add(-24 * time.Hour),
 		To:         time.Now().Add(24 * time.Hour),
 		Pagination: pagination,
@@ -2407,7 +2407,7 @@ func TestGetProjectTagsEndpoint(t *testing.T) {
 	mockStore.CreateRecord(context.Background(), record3)
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d/t", projectID), nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%016x/t", projectID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2479,7 +2479,7 @@ func TestGetProjectTagsEmptyProject(t *testing.T) {
 	projectID := project.ID
 
 	// HTTPリクエストを作成
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%d/t", projectID), nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/v0/p/%016x/t", projectID.ToInt64()), nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
 	w := httptest.NewRecorder()
@@ -2723,7 +2723,7 @@ func TestListRecordsEmptyResponse(t *testing.T) {
 
 	// プロジェクトIDを指定してリクエスト（レコードは存在しない）
 	projectID := int64(1)
-	url := fmt.Sprintf("/api/v0/r?project_id=%d", projectID)
+	url := fmt.Sprintf("/api/v0/r?project_id=%016x", projectID)
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("X-API-Key", testAPIKey)
 
