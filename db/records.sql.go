@@ -48,17 +48,18 @@ func (q *Queries) CreateRecord(ctx context.Context, arg CreateRecordParams) (sql
 }
 
 const createRecordTag = `-- name: CreateRecordTag :exec
-INSERT INTO tags (record_id, tag)
-VALUES (?, ?)
+INSERT INTO tags (record_id, tag, order_index)
+VALUES (?, ?, ?)
 `
 
 type CreateRecordTagParams struct {
-	RecordID int64  `db:"record_id" json:"record_id"`
-	Tag      string `db:"tag" json:"tag"`
+	RecordID   int64  `db:"record_id" json:"record_id"`
+	Tag        string `db:"tag" json:"tag"`
+	OrderIndex int64  `db:"order_index" json:"order_index"`
 }
 
 func (q *Queries) CreateRecordTag(ctx context.Context, arg CreateRecordTagParams) error {
-	_, err := q.db.ExecContext(ctx, createRecordTag, arg.RecordID, arg.Tag)
+	_, err := q.db.ExecContext(ctx, createRecordTag, arg.RecordID, arg.Tag, arg.OrderIndex)
 	return err
 }
 
@@ -181,6 +182,7 @@ const getRecordTags = `-- name: GetRecordTags :many
 SELECT tag
 FROM tags
 WHERE record_id = ?
+ORDER BY order_index
 `
 
 func (q *Queries) GetRecordTags(ctx context.Context, recordID int64) ([]string, error) {
@@ -264,12 +266,10 @@ SELECT
     r.project_id,
     r.value,
     r.timestamp,
-    COALESCE(GROUP_CONCAT(t.tag, ' '), '') as tags
+    COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM tags WHERE record_id = r.id ORDER BY order_index), '') as tags
 FROM records r
-LEFT JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
   AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
-GROUP BY r.id, r.project_id, r.value, r.timestamp
 ORDER BY r.timestamp DESC, r.id
 LIMIT ?
 `
@@ -340,7 +340,7 @@ SELECT
     r.project_id,
     r.value,
     r.timestamp,
-    COALESCE(GROUP_CONCAT(t.tag, ' '), '') as all_tags
+    COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM tags WHERE record_id = r.id ORDER BY order_index), '') as all_tags
 FROM records r
 INNER JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?

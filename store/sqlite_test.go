@@ -44,6 +44,7 @@ func testMigration(conn *sql.DB) error {
 		CREATE TABLE IF NOT EXISTS tags (
 			record_id INTEGER NOT NULL,
 			tag TEXT NOT NULL,
+			order_index INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (record_id, tag),
 			FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
 		);
@@ -1355,7 +1356,7 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 		}
 
 		// 最初の3件が取得されているか確認（降順なので最新の3件）
-    for i := range 3 {
+		for i := range 3 {
 			if !records[i].ID.Equals(allRecords[i].ID) {
 				t.Errorf("Record at index %d has incorrect ID. Expected %s, got %s",
 					i, allRecords[i].ID, records[i].ID)
@@ -1391,7 +1392,7 @@ func TestListRecordsWithCursorPagination(t *testing.T) {
 
 		// 重要: 2ページ目は1ページ目と異なるレコードであるべき
 		// カーソルの次のレコード（allRecords[3], [4], [5]）が返されるべき
-    for i := range 3 {
+		for i := range 3 {
 			expectedIndex := i + 3
 			if !records[i].ID.Equals(allRecords[expectedIndex].ID) {
 				t.Errorf("Record at index %d on second page has incorrect ID. Expected %s (from allRecords[%d]), got %s",
@@ -1512,7 +1513,7 @@ func TestListProjectsWithCursorPagination(t *testing.T) {
 		}
 
 		// 2ページ目は1ページ目と異なるプロジェクトであるべき
-		for i := range 3{
+		for i := range 3 {
 			expectedIndex := i + 3
 			if !projects[i].ID.Equals(allProjects[expectedIndex].ID) {
 				t.Errorf("Project at index %d on second page has incorrect ID. Expected %s (from allProjects[%d]), got %s",
@@ -1601,4 +1602,121 @@ func TestListAllRecordsWithPagination(t *testing.T) {
 	}
 
 	t.Logf("Successfully retrieved %d unique records across multiple pages", len(retrievedRecords))
+}
+
+// TestRecordTagsOrder tests that tags maintain their insertion order
+func TestRecordTagsOrder(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	// プロジェクトを作成
+	project, err := model.NewProject("test", "Test project")
+	if err != nil {
+		t.Fatalf("Failed to create project model: %v", err)
+	}
+	err = store.CreateProject(context.Background(), project)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+
+	// タグを特定の順番で作成
+	timestamp := time.Now()
+	orderedTags := []string{"first", "second", "third", "fourth", "fifth"}
+	record, err := model.NewRecord(timestamp, project.ID, 100, orderedTags)
+	if err != nil {
+		t.Fatalf("Failed to create record: %v", err)
+	}
+
+	// レコードを保存
+	err = store.CreateRecord(context.Background(), record)
+	if err != nil {
+		t.Fatalf("Failed to create record: %v", err)
+	}
+
+	// レコードを取得してタグの順番を確認
+	retrievedRecord, err := store.GetRecord(context.Background(), record.ID)
+	if err != nil {
+		t.Fatalf("Failed to get record: %v", err)
+	}
+
+	// タグの数を確認
+	if len(retrievedRecord.Tags) != len(orderedTags) {
+		t.Errorf("Expected %d tags, got %d", len(orderedTags), len(retrievedRecord.Tags))
+	}
+
+	// タグの順番が保持されているか確認
+	for i, expectedTag := range orderedTags {
+		if i >= len(retrievedRecord.Tags) {
+			t.Errorf("Tag at index %d is missing", i)
+			continue
+		}
+		if retrievedRecord.Tags[i] != expectedTag {
+			t.Errorf("Tag at index %d: expected '%s', got '%s'", i, expectedTag, retrievedRecord.Tags[i])
+		}
+	}
+
+	// ListRecords でもタグの順番が保持されているか確認
+	pagination := model.NewPaginationWithValues(10, nil)
+	params := &ListRecordsParams{
+		ProjectID:  project.ID,
+		From:       timestamp.Add(-1 * time.Hour),
+		To:         timestamp.Add(1 * time.Hour),
+		Pagination: pagination,
+		Tags:       []string{},
+	}
+	records, err := store.ListRecords(context.Background(), params)
+	if err != nil {
+		t.Fatalf("Failed to list records: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 record, got %d", len(records))
+	}
+
+	listedRecord := records[0]
+	if len(listedRecord.Tags) != len(orderedTags) {
+		t.Errorf("Listed record: expected %d tags, got %d", len(orderedTags), len(listedRecord.Tags))
+	}
+
+	for i, expectedTag := range orderedTags {
+		if i >= len(listedRecord.Tags) {
+			t.Errorf("Listed record: tag at index %d is missing", i)
+			continue
+		}
+		if listedRecord.Tags[i] != expectedTag {
+			t.Errorf("Listed record: tag at index %d: expected '%s', got '%s'", i, expectedTag, listedRecord.Tags[i])
+		}
+	}
+
+	// UpdateRecord でタグの順番を変更してテスト
+	updatedTags := []string{"alpha", "beta", "gamma"}
+	updatedRecord, err := model.LoadRecord(record.ID, timestamp, project.ID, 200, updatedTags)
+	if err != nil {
+		t.Fatalf("Failed to load updated record: %v", err)
+	}
+
+	err = store.UpdateRecord(context.Background(), updatedRecord)
+	if err != nil {
+		t.Fatalf("Failed to update record: %v", err)
+	}
+
+	// 更新後のレコードを取得して確認
+	finalRecord, err := store.GetRecord(context.Background(), record.ID)
+	if err != nil {
+		t.Fatalf("Failed to get updated record: %v", err)
+	}
+
+	if len(finalRecord.Tags) != len(updatedTags) {
+		t.Errorf("Updated record: expected %d tags, got %d", len(updatedTags), len(finalRecord.Tags))
+	}
+
+	for i, expectedTag := range updatedTags {
+		if i >= len(finalRecord.Tags) {
+			t.Errorf("Updated record: tag at index %d is missing", i)
+			continue
+		}
+		if finalRecord.Tags[i] != expectedTag {
+			t.Errorf("Updated record: tag at index %d: expected '%s', got '%s'", i, expectedTag, finalRecord.Tags[i])
+		}
+	}
 }

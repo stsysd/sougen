@@ -1522,20 +1522,20 @@ func TestDeleteProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-  mockStore.CreateRecord(context.Background(), rec1)
+	mockStore.CreateRecord(context.Background(), rec1)
 
 	rec2, err := model.NewRecord(timestamp.Add(1*time.Hour), projectID, 15, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-  mockStore.CreateRecord(context.Background(), rec2)
+	mockStore.CreateRecord(context.Background(), rec2)
 
 	// 別プロジェクトのレコードも追加
 	rec3, err := model.NewRecord(timestamp, model.NewHexID(43), 20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-  mockStore.CreateRecord(context.Background(), rec3)
+	mockStore.CreateRecord(context.Background(), rec3)
 
 	server := NewServer(mockStore, newTestConfig())
 
