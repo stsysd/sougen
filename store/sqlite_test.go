@@ -57,6 +57,9 @@ func testMigration(conn *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
 		CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
 		CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
+
+		-- Unique constraint for tag order within same record
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_record_order ON tags(record_id, order_index);
 	`)
 	return err
 }
