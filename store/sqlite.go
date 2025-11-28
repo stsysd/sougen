@@ -153,10 +153,11 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 	record.ID = model.NewHexID(id)
 
 	// タグを個別に挿入
-	for _, tag := range record.Tags {
+	for i, tag := range record.Tags {
 		err = s.queries.CreateRecordTag(ctx, db.CreateRecordTagParams{
-			RecordID: id,
-			Tag:      tag,
+			RecordID:   id,
+			Tag:        tag,
+			OrderIndex: int64(i),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create tag %s: %w", tag, err)
@@ -221,10 +222,11 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	}
 
 	// 新しいタグを個別に挿入
-	for _, tag := range record.Tags {
+	for i, tag := range record.Tags {
 		err = queriesWithTx.CreateRecordTag(ctx, db.CreateRecordTagParams{
-			RecordID: record.ID.ToInt64(),
-			Tag:      tag,
+			RecordID:   record.ID.ToInt64(),
+			Tag:        tag,
+			OrderIndex: int64(i),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create tag %s: %w", tag, err)

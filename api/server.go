@@ -25,6 +25,25 @@ type Server struct {
 	config *config.Config
 }
 
+// ErrorResponse はエラーレスポンスの構造体です。
+type ErrorResponse struct {
+	Error string `json:"error"`
+	Code  int    `json:"code"`
+}
+
+// writeJSONError はJSON形式でエラーレスポンスを返却します。
+func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	resp := ErrorResponse{
+		Error: message,
+		Code:  statusCode,
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("Error encoding error response: %v", err)
+	}
+}
+
 // NewServer は新しいAPIサーバーインスタンスを生成します。
 func NewServer(store store.Store, config *config.Config) *Server {
 	s := &Server{
@@ -136,7 +155,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewCreateRecordParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -144,7 +163,7 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	_, err = s.store.GetProject(r.Context(), params.ProjectID)
 	if err != nil {
 		log.Printf("Error getting project: %v", err)
-		http.Error(w, "Project not found", http.StatusNotFound)
+		writeJSONError(w, "Project not found", http.StatusNotFound)
 		return
 	}
 
@@ -152,14 +171,14 @@ func (s *Server) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	record, err := model.NewRecord(params.Timestamp.Time(), params.ProjectID, params.Value.Int(), params.Tags)
 	if err != nil {
 		log.Printf("Error creating record: %v", err)
-		http.Error(w, "Failed to create record", http.StatusBadRequest)
+		writeJSONError(w, "Failed to create record", http.StatusBadRequest)
 		return
 	}
 
 	// レコードの保存
 	if err := s.store.CreateRecord(r.Context(), record); err != nil {
 		log.Printf("Error creating record: %v", err)
-		http.Error(w, "Failed to create record", http.StatusInternalServerError)
+		writeJSONError(w, "Failed to create record", http.StatusInternalServerError)
 		return
 	}
 
@@ -193,7 +212,7 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewGetRecordParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -201,10 +220,10 @@ func (s *Server) handleGetRecord(w http.ResponseWriter, r *http.Request) {
 	record, err := s.store.GetRecord(r.Context(), params.RecordID)
 	if err != nil {
 		if err.Error() == "record not found" {
-			http.Error(w, "Record not found", http.StatusNotFound)
+			writeJSONError(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error retrieving record: %v", err)
-			http.Error(w, "Failed to retrieve record", http.StatusInternalServerError)
+			writeJSONError(w, "Failed to retrieve record", http.StatusInternalServerError)
 		}
 		return
 	}
@@ -271,7 +290,7 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewUpdateRecordParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -279,10 +298,10 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	existingRecord, err := s.store.GetRecord(r.Context(), params.RecordID)
 	if err != nil {
 		if err.Error() == "record not found" {
-			http.Error(w, "Record not found", http.StatusNotFound)
+			writeJSONError(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error retrieving record: %v", err)
-			http.Error(w, "Failed to retrieve record", http.StatusInternalServerError)
+			writeJSONError(w, "Failed to retrieve record", http.StatusInternalServerError)
 		}
 		return
 	}
@@ -309,10 +328,10 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	// レコードの更新
 	if err := s.store.UpdateRecord(r.Context(), &updatedRecord); err != nil {
 		if err.Error() == "record not found" {
-			http.Error(w, "Record not found", http.StatusNotFound)
+			writeJSONError(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error updating record: %v", err)
-			http.Error(w, "Failed to update record", http.StatusInternalServerError)
+			writeJSONError(w, "Failed to update record", http.StatusInternalServerError)
 		}
 		return
 	}
@@ -346,17 +365,17 @@ func (s *Server) handleDeleteRecord(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewDeleteRecordParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// レコードの削除
 	if err := s.store.DeleteRecord(r.Context(), params.RecordID); err != nil {
 		if err.Error() == "record not found" {
-			http.Error(w, "Record not found", http.StatusNotFound)
+			writeJSONError(w, "Record not found", http.StatusNotFound)
 		} else {
 			log.Printf("Error deleting record: %v", err)
-			http.Error(w, "Failed to delete record", http.StatusInternalServerError)
+			writeJSONError(w, "Failed to delete record", http.StatusInternalServerError)
 		}
 		return
 	}
@@ -590,7 +609,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewListRecordsParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -600,12 +619,12 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	if params.Pagination.Cursor() != nil {
 		decodedCursor, err := model.DecodeRecordCursor(*params.Pagination.Cursor())
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Invalid cursor: %v", err), http.StatusBadRequest)
+			writeJSONError(w, fmt.Sprintf("Invalid cursor: %v", err), http.StatusBadRequest)
 			return
 		}
 		ts, err := time.Parse(time.RFC3339, decodedCursor.Timestamp)
 		if err != nil {
-			http.Error(w, "Invalid cursor timestamp", http.StatusBadRequest)
+			writeJSONError(w, "Invalid cursor timestamp", http.StatusBadRequest)
 			return
 		}
 		cursorTimestamp = &ts
@@ -634,7 +653,7 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	records, err := s.store.ListRecords(r.Context(), storeParams)
 	if err != nil {
 		log.Printf("Error retrieving records: %v", err)
-		http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
+		writeJSONError(w, "Failed to retrieve records", http.StatusInternalServerError)
 		return
 	}
 
@@ -694,7 +713,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewGetProjectParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -702,9 +721,9 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	project, err := s.store.GetProject(r.Context(), params.ProjectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
-			http.Error(w, fmt.Sprintf("Project with ID %s not found", params.ProjectID), http.StatusNotFound)
+			writeJSONError(w, fmt.Sprintf("Project with ID %s not found", params.ProjectID), http.StatusNotFound)
 		} else {
-			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
+			writeJSONError(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
 		}
 		return
 	}
@@ -715,8 +734,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 	// JSONとしてレスポンスを返す
 	if err := json.NewEncoder(w).Encode(project); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
-		return
+		log.Printf("Error encoding response: %v", err)
 	}
 }
 
@@ -750,7 +768,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewListProjectsParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -760,12 +778,12 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	if params.Pagination.Cursor() != nil {
 		decodedCursor, err := model.DecodeProjectCursor(*params.Pagination.Cursor())
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Invalid cursor: %v", err), http.StatusBadRequest)
+			writeJSONError(w, fmt.Sprintf("Invalid cursor: %v", err), http.StatusBadRequest)
 			return
 		}
 		updatedAt, err := time.Parse(time.RFC3339, decodedCursor.UpdatedAt)
 		if err != nil {
-			http.Error(w, "Invalid cursor updated_at", http.StatusBadRequest)
+			writeJSONError(w, "Invalid cursor updated_at", http.StatusBadRequest)
 			return
 		}
 		cursorUpdatedAt = &updatedAt
@@ -782,7 +800,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 	projects, err := s.store.ListProjects(r.Context(), storeParams)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error retrieving projects: %v", err), http.StatusInternalServerError)
+		writeJSONError(w, fmt.Sprintf("Error retrieving projects: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -821,7 +839,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// リクエストボディの読み取り
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		writeJSONError(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 
@@ -831,20 +849,20 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(body, &projectData); err != nil {
-		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		writeJSONError(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
 
 	// プロジェクトの作成
 	project, err := model.NewProject(projectData.Name, projectData.Description)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid project data: %v", err), http.StatusBadRequest)
+		writeJSONError(w, fmt.Sprintf("Invalid project data: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	// データベースに保存
 	if err := s.store.CreateProject(r.Context(), project); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create project: %v", err), http.StatusInternalServerError)
+		writeJSONError(w, fmt.Sprintf("Failed to create project: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -854,8 +872,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 	// 作成されたプロジェクトをJSONとして返す
 	if err := json.NewEncoder(w).Encode(project); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
-		return
+		log.Printf("Error encoding response: %v", err)
 	}
 }
 
@@ -864,7 +881,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	// URLからプロジェクトIDを取得
 	projectID, err := model.ParseHexID(r.PathValue("project_id"))
 	if err != nil {
-		http.Error(w, "Invalid project_id", http.StatusBadRequest)
+		writeJSONError(w, "Invalid project_id", http.StatusBadRequest)
 		return
 	}
 
@@ -872,9 +889,9 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	existingProject, err := s.store.GetProject(r.Context(), projectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
-			http.Error(w, fmt.Sprintf("Project with ID %s not found", projectID), http.StatusNotFound)
+			writeJSONError(w, fmt.Sprintf("Project with ID %s not found", projectID), http.StatusNotFound)
 		} else {
-			http.Error(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
+			writeJSONError(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
 		}
 		return
 	}
@@ -882,7 +899,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	// リクエストボディの読み取り
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		writeJSONError(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 
@@ -891,7 +908,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(body, &updateData); err != nil {
-		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		writeJSONError(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
 
@@ -901,7 +918,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	// データベースに保存
 	if err := s.store.UpdateProject(r.Context(), existingProject); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update project: %v", err), http.StatusInternalServerError)
+		writeJSONError(w, fmt.Sprintf("Failed to update project: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -911,8 +928,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	// 更新されたプロジェクトをJSONとして返す
 	if err := json.NewEncoder(w).Encode(existingProject); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
-		return
+		log.Printf("Error encoding response: %v", err)
 	}
 }
 
@@ -938,7 +954,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewDeleteProjectParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -946,15 +962,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	err = s.store.DeleteProject(r.Context(), params.ProjectID)
 	if err != nil {
 		log.Printf("Error deleting project: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		errorResp := map[string]any{
-			"error": fmt.Sprintf("Failed to delete project: %v", err),
-			"code":  500,
-		}
-		if err := json.NewEncoder(w).Encode(errorResp); err != nil {
-			log.Printf("Error encoding error response: %v", err)
-		}
+		writeJSONError(w, fmt.Sprintf("Failed to delete project: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -967,7 +975,7 @@ func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request)
 	// リクエストボディの読み取り
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		writeJSONError(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 
@@ -977,20 +985,20 @@ func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request)
 		Until     string      `json:"until"`
 	}
 	if err := json.Unmarshal(body, &deletionData); err != nil {
-		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		writeJSONError(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
 
 	// untilパラメータの検証
 	if deletionData.Until == "" {
-		http.Error(w, "until parameter is required", http.StatusBadRequest)
+		writeJSONError(w, "until parameter is required", http.StatusBadRequest)
 		return
 	}
 
 	// タイムスタンプのパース
 	timestamp, err := model.NewTimestamp(deletionData.Until)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -998,7 +1006,7 @@ func (s *Server) handleBulkDeleteRecords(w http.ResponseWriter, r *http.Request)
 	count, err := s.store.DeleteRecordsUntil(r.Context(), deletionData.ProjectID, timestamp.Time())
 	if err != nil {
 		log.Printf("Error deleting records until specified date: %v", err)
-		http.Error(w, "Failed to delete records", http.StatusInternalServerError)
+		writeJSONError(w, "Failed to delete records", http.StatusInternalServerError)
 		return
 	}
 
@@ -1036,7 +1044,7 @@ func (s *Server) handleGetProjectTags(w http.ResponseWriter, r *http.Request) {
 	// パラメータを検証
 	params, err := NewGetProjectTagsParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1044,7 +1052,7 @@ func (s *Server) handleGetProjectTags(w http.ResponseWriter, r *http.Request) {
 	tags, err := s.store.GetProjectTags(r.Context(), params.ProjectID)
 	if err != nil {
 		log.Printf("Error retrieving project tags: %v", err)
-		http.Error(w, "Failed to retrieve project tags", http.StatusInternalServerError)
+		writeJSONError(w, "Failed to retrieve project tags", http.StatusInternalServerError)
 		return
 	}
 

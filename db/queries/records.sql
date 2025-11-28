@@ -3,8 +3,8 @@ INSERT INTO records (project_id, value, timestamp)
 VALUES (?, ?, ?);
 
 -- name: CreateRecordTag :exec
-INSERT INTO tags (record_id, tag)
-VALUES (?, ?);
+INSERT INTO tags (record_id, tag, order_index)
+VALUES (?, ?, ?);
 
 -- name: GetRecord :one
 SELECT id, project_id, value, timestamp
@@ -14,7 +14,8 @@ WHERE id = ?;
 -- name: GetRecordTags :many
 SELECT tag
 FROM tags
-WHERE record_id = ?;
+WHERE record_id = ?
+ORDER BY order_index;
 
 -- name: DeleteRecord :execresult
 DELETE FROM records WHERE id = ?;
@@ -28,12 +29,18 @@ SELECT
     r.project_id,
     r.value,
     r.timestamp,
-    COALESCE(GROUP_CONCAT(t.tag, ' '), '') as tags
+    COALESCE((
+        SELECT GROUP_CONCAT(tag, ' ')
+        FROM (
+            SELECT tag
+            FROM tags
+            WHERE record_id = r.id
+            ORDER BY order_index
+        )
+    ), '') as tags
 FROM records r
-LEFT JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
   AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
-GROUP BY r.id, r.project_id, r.value, r.timestamp
 ORDER BY r.timestamp DESC, r.id
 LIMIT ?;
 
@@ -47,7 +54,15 @@ SELECT
     r.project_id,
     r.value,
     r.timestamp,
-    COALESCE(GROUP_CONCAT(t.tag, ' '), '') as all_tags
+    COALESCE((
+        SELECT GROUP_CONCAT(tag, ' ')
+        FROM (
+            SELECT tag
+            FROM tags
+            WHERE record_id = r.id
+            ORDER BY order_index
+        )
+    ), '') as all_tags
 FROM records r
 INNER JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?

@@ -19,15 +19,8 @@ type Record struct {
 	Timestamp string `db:"timestamp" json:"timestamp"`
 }
 
-type RecordsNew struct {
-	ID        int64  `db:"id" json:"id"`
-	OldID     string `db:"old_id" json:"old_id"`
-	ProjectID int64  `db:"project_id" json:"project_id"`
-	Value     int64  `db:"value" json:"value"`
-	Timestamp string `db:"timestamp" json:"timestamp"`
-}
-
 type Tag struct {
-	RecordID int64  `db:"record_id" json:"record_id"`
-	Tag      string `db:"tag" json:"tag"`
+	RecordID   int64  `db:"record_id" json:"record_id"`
+	Tag        string `db:"tag" json:"tag"`
+	OrderIndex int64  `db:"order_index" json:"order_index"`
 }
