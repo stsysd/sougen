@@ -13,7 +13,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/stsysd/sougen/db"
+	"github.com/stsysd/sougen/db/sqlc"
 	"github.com/stsysd/sougen/model"
 )
 
@@ -83,7 +83,7 @@ type Store interface {
 // SQLiteStore はSQLiteを使用したRecordStoreの実装です。
 type SQLiteStore struct {
 	conn    *sql.DB
-	queries *db.Queries
+	queries *sqlc.Queries
 }
 
 // MigrationFunc はデータベースマイグレーションを実行する関数の型です。
@@ -122,7 +122,7 @@ func NewSQLiteStore(dataDir string, migrationFunc MigrationFunc) (*SQLiteStore, 
 
 	return &SQLiteStore{
 		conn:    conn,
-		queries: db.New(conn),
+		queries: sqlc.New(conn),
 	}, nil
 }
 
@@ -137,7 +137,7 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 	formattedTime := record.Timestamp.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用（IDは自動生成）
-	ret, err := s.queries.CreateRecord(ctx, db.CreateRecordParams{
+	ret, err := s.queries.CreateRecord(ctx, sqlc.CreateRecordParams{
 		ProjectID: record.ProjectID.ToInt64(),
 		Value:     int64(record.Value),
 		Timestamp: formattedTime,
@@ -154,7 +154,7 @@ func (s *SQLiteStore) CreateRecord(ctx context.Context, record *model.Record) er
 
 	// タグを個別に挿入
 	for i, tag := range record.Tags {
-		err = s.queries.CreateRecordTag(ctx, db.CreateRecordTagParams{
+		err = s.queries.CreateRecordTag(ctx, sqlc.CreateRecordTagParams{
 			RecordID:   id,
 			Tag:        tag,
 			OrderIndex: int64(i),
@@ -194,7 +194,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 	queriesWithTx := s.queries.WithTx(tx)
 
 	// レコードの基本情報を更新
-	result, err := queriesWithTx.UpdateRecord(ctx, db.UpdateRecordParams{
+	result, err := queriesWithTx.UpdateRecord(ctx, sqlc.UpdateRecordParams{
 		ProjectID: record.ProjectID.ToInt64(),
 		Value:     int64(record.Value),
 		Timestamp: formattedTime,
@@ -223,7 +223,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 
 	// 新しいタグを個別に挿入
 	for i, tag := range record.Tags {
-		err = queriesWithTx.CreateRecordTag(ctx, db.CreateRecordTagParams{
+		err = queriesWithTx.CreateRecordTag(ctx, sqlc.CreateRecordTagParams{
 			RecordID:   record.ID.ToInt64(),
 			Tag:        tag,
 			OrderIndex: int64(i),
@@ -300,7 +300,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 
 	if len(params.Tags) == 0 {
 		// タグフィルタなし
-		dbRecords, err := s.queries.ListRecords(ctx, db.ListRecordsParams{
+		dbRecords, err := s.queries.ListRecords(ctx, sqlc.ListRecordsParams{
 			Timestamp:   fromStr,
 			Timestamp_2: toStr,
 			ProjectID:   params.ProjectID.ToInt64(),
@@ -333,7 +333,7 @@ func (s *SQLiteStore) ListRecords(ctx context.Context, params *ListRecordsParams
 		}
 	} else {
 		// タグフィルタあり
-		dbRecords, err := s.queries.ListRecordsWithTags(ctx, db.ListRecordsWithTagsParams{
+		dbRecords, err := s.queries.ListRecordsWithTags(ctx, sqlc.ListRecordsWithTagsParams{
 			Timestamp:   fromStr,
 			Timestamp_2: toStr,
 			ProjectID:   params.ProjectID.ToInt64(),
@@ -506,7 +506,7 @@ func (s *SQLiteStore) DeleteRecordsUntil(ctx context.Context, projectID model.He
 		result, err = queriesWithTx.DeleteRecordsUntil(ctx, untilStr)
 	} else {
 		// 特定プロジェクトのレコードを削除
-		result, err = queriesWithTx.DeleteRecordsUntilByProject(ctx, db.DeleteRecordsUntilByProjectParams{
+		result, err = queriesWithTx.DeleteRecordsUntilByProject(ctx, sqlc.DeleteRecordsUntilByProjectParams{
 			ProjectID: projectID.ToInt64(),
 			Timestamp: untilStr,
 		})
@@ -543,7 +543,7 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, project *model.Project)
 	updatedAtStr := project.UpdatedAt.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
-	ret, err := s.queries.CreateProject(ctx, db.CreateProjectParams{
+	ret, err := s.queries.CreateProject(ctx, sqlc.CreateProjectParams{
 		Name:        project.Name,
 		Description: project.Description,
 		CreatedAt:   createdAtStr,
@@ -598,7 +598,7 @@ func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project)
 	updatedAtStr := project.UpdatedAt.Format(time.RFC3339)
 
 	// sqlcで生成されたクエリを使用
-	result, err := s.queries.UpdateProject(ctx, db.UpdateProjectParams{
+	result, err := s.queries.UpdateProject(ctx, sqlc.UpdateProjectParams{
 		Description: project.Description,
 		UpdatedAt:   updatedAtStr,
 		ID:          project.ID.ToInt64(),
@@ -642,7 +642,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, params *ListProjectsPara
 	}
 
 	// sqlcで生成されたクエリを使用
-	dbProjects, err := s.queries.ListProjects(ctx, db.ListProjectsParams{
+	dbProjects, err := s.queries.ListProjects(ctx, sqlc.ListProjectsParams{
 		Column1:     cursorColumn,
 		UpdatedAt:   cursorUpdatedAt,
 		UpdatedAt_2: cursorUpdatedAt,
