@@ -29,7 +29,15 @@ SELECT
     r.project_id,
     r.value,
     r.timestamp,
-    COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM tags WHERE record_id = r.id ORDER BY order_index), '') as tags
+    COALESCE((
+        SELECT GROUP_CONCAT(tag, ' ')
+        FROM (
+            SELECT tag
+            FROM tags
+            WHERE record_id = r.id
+            ORDER BY order_index
+        )
+    ), '') as tags
 FROM records r
 WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
   AND (? IS NULL OR r.timestamp < ? OR (r.timestamp = ? AND r.id > ?))
@@ -46,7 +54,15 @@ SELECT
     r.project_id,
     r.value,
     r.timestamp,
-    COALESCE((SELECT GROUP_CONCAT(tag, ' ') FROM tags WHERE record_id = r.id ORDER BY order_index), '') as all_tags
+    COALESCE((
+        SELECT GROUP_CONCAT(tag, ' ')
+        FROM (
+            SELECT tag
+            FROM tags
+            WHERE record_id = r.id
+            ORDER BY order_index
+        )
+    ), '') as all_tags
 FROM records r
 INNER JOIN tags t ON r.id = t.record_id
 WHERE r.timestamp BETWEEN ? AND ? AND r.project_id = ?
