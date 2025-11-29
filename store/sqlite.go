@@ -4,7 +4,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -212,7 +211,7 @@ func (s *SQLiteStore) UpdateRecord(ctx context.Context, record *model.Record) er
 
 	// レコードが見つからない場合
 	if rowsAffected == 0 {
-		return errors.New("record not found")
+		return model.ErrRecordNotFound
 	}
 
 	// 既存のタグを削除
@@ -247,7 +246,7 @@ func (s *SQLiteStore) GetRecord(ctx context.Context, id model.HexID) (*model.Rec
 	// sqlcで生成されたクエリを使用
 	dbRecord, err := s.queries.GetRecord(ctx, id.ToInt64())
 	if err == sql.ErrNoRows {
-		return nil, errors.New("record not found")
+		return nil, model.ErrRecordNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -441,7 +440,7 @@ func (s *SQLiteStore) DeleteRecord(ctx context.Context, id model.HexID) error {
 
 	// レコードが見つからない場合
 	if rowsAffected == 0 {
-		return errors.New("record not found")
+		return model.ErrRecordNotFound
 	}
 
 	return nil
@@ -566,7 +565,7 @@ func (s *SQLiteStore) GetProject(ctx context.Context, id model.HexID) (*model.Pr
 	// sqlcで生成されたクエリを使用
 	dbProject, err := s.queries.GetProject(ctx, id.ToInt64())
 	if err == sql.ErrNoRows {
-		return nil, errors.New("project not found")
+		return nil, model.ErrProjectNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project: %w", err)
@@ -616,7 +615,7 @@ func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project)
 
 	// プロジェクトが見つからない場合
 	if rowsAffected == 0 {
-		return errors.New("project not found")
+		return model.ErrProjectNotFound
 	}
 
 	return nil
