@@ -903,19 +903,23 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// JSONのパース
+	// JSONのパース（部分更新をサポートするためポインタ型を使用）
 	var updateData struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
 	}
 	if err := json.Unmarshal(body, &updateData); err != nil {
 		writeJSONError(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
 
-	// プロジェクトの更新
-	existingProject.Name = updateData.Name
-	existingProject.Description = updateData.Description
+	// プロジェクトの部分更新（指定されたフィールドのみ更新）
+	if updateData.Name != nil {
+		existingProject.Name = *updateData.Name
+	}
+	if updateData.Description != nil {
+		existingProject.Description = *updateData.Description
+	}
 	existingProject.UpdatedAt = time.Now()
 
 	// バリデーション
@@ -966,20 +970,15 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 削除前にプロジェクトの存在確認
-	_, err = s.store.GetProject(r.Context(), params.ProjectID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
-			writeJSONError(w, fmt.Sprintf("Project with ID %s not found", params.ProjectID), http.StatusNotFound)
-		} else {
-			writeJSONError(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// プロジェクト削除の実行
+	// プロジェクト削除の実行（べき等性：既に存在しない場合もエラーにしない）
 	err = s.store.DeleteProject(r.Context(), params.ProjectID)
 	if err != nil {
+		// プロジェクトが存在しない場合は成功とみなす（べき等性）
+		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// その他のエラーの場合は500を返す
 		log.Printf("Error deleting project: %v", err)
 		writeJSONError(w, fmt.Sprintf("Failed to delete project: %v", err), http.StatusInternalServerError)
 		return
