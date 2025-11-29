@@ -2461,9 +2461,9 @@ func TestGetProjectTagsNonExistentProject(t *testing.T) {
 	w := httptest.NewRecorder()
 	server.ServeHTTP(w, req)
 
-	// Internal Server Errorステータスコードを期待（プロジェクトが存在しない場合）
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
+	// Not Foundステータスコードを期待（プロジェクトが存在しない場合）
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status %d, got %d", http.StatusNotFound, w.Code)
 	}
 }
 

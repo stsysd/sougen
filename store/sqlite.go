@@ -599,6 +599,7 @@ func (s *SQLiteStore) UpdateProject(ctx context.Context, project *model.Project)
 
 	// sqlcで生成されたクエリを使用
 	result, err := s.queries.UpdateProject(ctx, sqlc.UpdateProjectParams{
+		Name:        project.Name,
 		Description: project.Description,
 		UpdatedAt:   updatedAtStr,
 		ID:          project.ID.ToInt64(),

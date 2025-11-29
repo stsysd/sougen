@@ -329,6 +329,9 @@ func (s *Server) handleUpdateRecord(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.UpdateRecord(r.Context(), &updatedRecord); err != nil {
 		if err.Error() == "record not found" {
 			writeJSONError(w, "Record not found", http.StatusNotFound)
+		} else if strings.Contains(err.Error(), "cannot") || strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "invalid") {
+			// バリデーションエラーの場合は400を返す
+			writeJSONError(w, err.Error(), http.StatusBadRequest)
 		} else {
 			log.Printf("Error updating record: %v", err)
 			writeJSONError(w, "Failed to update record", http.StatusInternalServerError)
@@ -568,14 +571,13 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 	}
 
 	// No cursor: use regular parameters from query
-	var projectID *model.HexID
 	projectIDStr := query.Get("project_id")
-	if projectIDStr != "" {
-		pid, err := model.ParseHexID(projectIDStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid project_id: %w", err)
-		}
-		projectID = &pid
+	if projectIDStr == "" {
+		return nil, fmt.Errorf("project_id is required")
+	}
+	pid, err := model.ParseHexID(projectIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid project_id: %w", err)
 	}
 
 	dateRange, err := model.NewDateRange(query.Get("from"), query.Get("to"))
@@ -591,7 +593,7 @@ func NewListRecordsParams(r *http.Request) (*ListRecordsParams, error) {
 	}
 
 	return &ListRecordsParams{
-		ProjectID:  projectID,
+		ProjectID:  &pid,
 		DateRange:  dateRange,
 		Tags:       tags,
 		Pagination: pagination,
@@ -632,10 +634,8 @@ func (s *Server) handleListRecords(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// store.ListRecordsParams を作成
-	var projectID model.HexID
-	if params.ProjectID != nil {
-		projectID = *params.ProjectID
-	}
+	// project_id is always present (validated in NewListRecordsParams)
+	projectID := *params.ProjectID
 	storeParams := &store.ListRecordsParams{
 		ProjectID:       projectID,
 		From:            params.DateRange.From(),
@@ -903,18 +903,30 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// JSONのパース
+	// JSONのパース（部分更新をサポートするためポインタ型を使用）
 	var updateData struct {
-		Description string `json:"description"`
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
 	}
 	if err := json.Unmarshal(body, &updateData); err != nil {
 		writeJSONError(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
 
-	// プロジェクトの更新
-	existingProject.Description = updateData.Description
+	// プロジェクトの部分更新（指定されたフィールドのみ更新）
+	if updateData.Name != nil {
+		existingProject.Name = *updateData.Name
+	}
+	if updateData.Description != nil {
+		existingProject.Description = *updateData.Description
+	}
 	existingProject.UpdatedAt = time.Now()
+
+	// バリデーション
+	if err := existingProject.Validate(); err != nil {
+		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// データベースに保存
 	if err := s.store.UpdateProject(r.Context(), existingProject); err != nil {
@@ -958,9 +970,15 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// プロジェクト削除の実行
+	// プロジェクト削除の実行（べき等性：既に存在しない場合もエラーにしない）
 	err = s.store.DeleteProject(r.Context(), params.ProjectID)
 	if err != nil {
+		// プロジェクトが存在しない場合は成功とみなす（べき等性）
+		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// その他のエラーの場合は500を返す
 		log.Printf("Error deleting project: %v", err)
 		writeJSONError(w, fmt.Sprintf("Failed to delete project: %v", err), http.StatusInternalServerError)
 		return
@@ -1045,6 +1063,17 @@ func (s *Server) handleGetProjectTags(w http.ResponseWriter, r *http.Request) {
 	params, err := NewGetProjectTagsParams(r)
 	if err != nil {
 		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// プロジェクトの存在確認
+	_, err = s.store.GetProject(r.Context(), params.ProjectID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || err.Error() == "project not found" {
+			writeJSONError(w, fmt.Sprintf("Project with ID %s not found", params.ProjectID), http.StatusNotFound)
+		} else {
+			writeJSONError(w, fmt.Sprintf("Error retrieving project: %v", err), http.StatusInternalServerError)
+		}
 		return
 	}
 
