@@ -1,0 +1,303 @@
+desc: 統合シナリオテスト - プロジェクト作成からレコード管理、可視化、削除までの完全フロー
+steps:
+# ヘルスチェック
+- desc: アプリケーションが正常に動作していることを確認
+  req:
+    /healthz:
+      get:
+        body:
+  test: |
+    current.res.status == 200
+
+# プロジェクト1を作成
+- desc: ワークアウトプロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "workout"
+            description: "Daily workout tracking"
+  test: |
+    current.res.status == 201
+    && current.res.body.name == "workout"
+  bind:
+    workout_project_id: current.res.body.id
+
+# プロジェクト2を作成
+- desc: 読書プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "reading"
+            description: "Book reading tracking"
+  test: |
+    current.res.status == 201
+    && current.res.body.name == "reading"
+  bind:
+    reading_project_id: current.res.body.id
+
+# プロジェクト一覧を確認
+- desc: プロジェクト一覧に作成したプロジェクトが存在することを確認
+  req:
+    /api/v0/p:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) >= 2
+
+# ワークアウトプロジェクトにレコードを追加
+- desc: 1月1日のワークアウトレコード
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ workout_project_id }}'
+            value: 30
+            timestamp: "2024-01-01T07:00:00Z"
+            tags: ["morning", "cardio"]
+  test: |
+    current.res.status == 201
+  bind:
+    workout_record_1: current.res.body.id
+
+- desc: 1月2日のワークアウトレコード
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ workout_project_id }}'
+            value: 45
+            timestamp: "2024-01-02T18:00:00Z"
+            tags: ["evening", "strength"]
+  test: |
+    current.res.status == 201
+  bind:
+    workout_record_2: current.res.body.id
+
+# 読書プロジェクトにレコードを追加
+- desc: 1月1日の読書レコード
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ reading_project_id }}'
+            value: 50
+            timestamp: "2024-01-01T20:00:00Z"
+            tags: ["fiction", "novel"]
+  test: |
+    current.res.status == 201
+  bind:
+    reading_record_1: current.res.body.id
+
+- desc: 1月3日の読書レコード
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ reading_project_id }}'
+            value: 35
+            timestamp: "2024-01-03T21:00:00Z"
+            tags: ["non-fiction", "biography"]
+  test: |
+    current.res.status == 201
+  bind:
+    reading_record_2: current.res.body.id
+
+# プロジェクトでフィルタリング
+- desc: ワークアウトプロジェクトのレコードのみ取得
+  req:
+    /api/v0/r?project_id={{ workout_project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 2
+
+# ワークアウトプロジェクトのタグを確認
+- desc: ワークアウトプロジェクトのタグ一覧を取得
+  req:
+    /api/v0/p/{{ workout_project_id }}/t:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body) == 4
+    && current.res.body[0] == "cardio"
+    && current.res.body[1] == "evening"
+    && current.res.body[2] == "morning"
+    && current.res.body[3] == "strength"
+
+# 読書プロジェクトのタグを確認
+- desc: 読書プロジェクトのタグ一覧を取得
+  req:
+    /api/v0/p/{{ reading_project_id }}/t:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body) == 4
+
+# ワークアウトのグラフを生成
+- desc: ワークアウトプロジェクトのヒートマップを生成
+  req:
+    /p/{{ workout_project_id }}/graph.svg:
+      get:
+        body:
+  test: |
+    current.res.status == 200
+    && hasPrefix(current.res.headers["Content-Type"][0], "image/svg+xml")
+
+# 読書のグラフを生成
+- desc: 読書プロジェクトのヒートマップを生成
+  req:
+    /p/{{ reading_project_id }}/graph.svg:
+      get:
+        body:
+  test: |
+    current.res.status == 200
+    && hasPrefix(current.res.headers["Content-Type"][0], "image/svg+xml")
+
+# レコードを更新
+- desc: ワークアウトレコードを更新
+  req:
+    /api/v0/r/{{ workout_record_1 }}:
+      put:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ workout_project_id }}'
+            value: 60
+            timestamp: "2024-01-01T07:00:00Z"
+            tags: ["morning", "cardio", "updated"]
+  test: |
+    current.res.status == 200
+    && current.res.body.value == 60
+    && len(current.res.body.tags) == 3
+
+# 古いレコードを一括削除
+- desc: 2024-01-02より前のレコードを一括削除
+  req:
+    /api/v0/bulk-deletion:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            until: "2024-01-02T00:00:00Z"
+  test: |
+    current.res.status == 200
+
+# 削除後のレコード数を確認（ワークアウトプロジェクトでフィルタ）
+- desc: ワークアウトプロジェクトのレコードが削除され、1件が残る
+  req:
+    /api/v0/r?project_id={{ workout_project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 1
+    && current.res.body.items[0].id == workout_record_2
+
+# 個別レコードを削除
+- desc: ワークアウトレコード2を削除
+  req:
+    /api/v0/r/{{ workout_record_2 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: 読書レコード2を削除
+  req:
+    /api/v0/r/{{ reading_record_2 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+# 全レコード削除確認
+- desc: ワークアウトプロジェクトのレコードが全て削除された
+  req:
+    /api/v0/r?project_id={{ workout_project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 0
+
+- desc: 読書プロジェクトのレコードが全て削除された
+  req:
+    /api/v0/r?project_id={{ reading_project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 0
+
+# プロジェクトを削除
+- desc: ワークアウトプロジェクトを削除
+  req:
+    /api/v0/p/{{ workout_project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: 読書プロジェクトを削除
+  req:
+    /api/v0/p/{{ reading_project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+# 最終確認：削除したプロジェクトにアクセスできない
+- desc: 削除したワークアウトプロジェクトにアクセスして404エラー
+  req:
+    /api/v0/p/{{ workout_project_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+
+- desc: 削除した読書プロジェクトにアクセスして404エラー
+  req:
+    /api/v0/p/{{ reading_project_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404

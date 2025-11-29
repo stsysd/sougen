@@ -1,0 +1,82 @@
+desc: プロジェクトのバリデーションエラーテスト
+steps:
+# 空のname
+- desc: 名前が空のプロジェクトを作成しようとして400エラー
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: ""
+            description: "説明のみ"
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# nameフィールドなし
+- desc: 名前フィールドがないプロジェクトを作成しようとして400エラー
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            description: "名前なし"
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# 正常なプロジェクトを作成してから更新テスト
+- desc: 正常なプロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "valid-project"
+            description: "正常なプロジェクト"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# 空のnameで更新を試みる
+- desc: プロジェクトの名前を空に更新しようとして400エラー
+  req:
+    /api/v0/p/{{ project_id }}:
+      put:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: ""
+            description: "名前を空にする"
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# 更新が失敗したことを確認（元の値が保持される）
+- desc: バリデーションエラー後も元の値が保持される
+  req:
+    /api/v0/p/{{ project_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && current.res.body.name == "valid-project"
+
+# クリーンアップ
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204

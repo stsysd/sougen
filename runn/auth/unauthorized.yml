@@ -1,0 +1,46 @@
+desc: 認証エラーテスト - APIキーなし、または無効なAPIキーでのアクセスを拒否
+steps:
+# APIキーなしでのアクセス
+- desc: APIキーなしでプロジェクト一覧を取得しようとして401エラー
+  req:
+    /api/v0/p:
+      get:
+        body:
+  test: |
+    current.res.status == 401
+    && current.res.body.error != ""
+
+# 無効なAPIキーでのアクセス
+- desc: 無効なAPIキーでプロジェクト一覧を取得しようとして401エラー
+  req:
+    /api/v0/p:
+      get:
+        headers:
+          X-API-KEY: 'invalid-key-12345'
+        body:
+  test: |
+    current.res.status == 401
+    && current.res.body.error != ""
+
+# APIキーなしでレコード作成を試みる
+- desc: APIキーなしでレコード作成しようとして401エラー
+  req:
+    /api/v0/r:
+      post:
+        body:
+          application/json:
+            project_id: "0123456789abcdef01234567"
+            value: 1
+            timestamp: "2024-01-01T00:00:00Z"
+  test: |
+    current.res.status == 401
+    && current.res.body.error != ""
+
+# ヘルスチェックは認証不要
+- desc: ヘルスチェックエンドポイントは認証なしでアクセス可能
+  req:
+    /healthz:
+      get:
+        body:
+  test: |
+    current.res.status == 200

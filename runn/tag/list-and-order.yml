@@ -1,0 +1,157 @@
+desc: タグ一覧取得と順序保持のテスト
+steps:
+# プロジェクトを作成
+- desc: テスト用プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "tag-test-project"
+            description: "タグテスト用プロジェクト"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# 初期状態でタグが空
+- desc: 初期状態でプロジェクトにタグがない
+  req:
+    /api/v0/p/{{ project_id }}/t:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body) == 0
+
+# 複数のタグを持つレコードを作成
+- desc: タグ付きレコード1を作成（tag-c, tag-a）
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 10
+            timestamp: "2024-01-01T10:00:00Z"
+            tags: ["tag-c", "tag-a"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_1: current.res.body.id
+
+- desc: タグ付きレコード2を作成（tag-b）
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 20
+            timestamp: "2024-01-02T10:00:00Z"
+            tags: ["tag-b"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_2: current.res.body.id
+
+- desc: タグ付きレコード3を作成（tag-a, tag-d）
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 30
+            timestamp: "2024-01-03T10:00:00Z"
+            tags: ["tag-a", "tag-d"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_3: current.res.body.id
+
+# プロジェクトのタグ一覧を取得
+- desc: プロジェクトのタグ一覧を取得（アルファベット順）
+  req:
+    /api/v0/p/{{ project_id }}/t:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body) == 4
+    && current.res.body[0] == "tag-a"
+    && current.res.body[1] == "tag-b"
+    && current.res.body[2] == "tag-c"
+    && current.res.body[3] == "tag-d"
+
+# レコードを1つ削除してもタグは残る（他のレコードで使われている）
+- desc: レコード1を削除
+  req:
+    /api/v0/r/{{ record_id_1 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: tag-aとtag-dは残る（レコード3で使用中）、tag-cは削除される
+  req:
+    /api/v0/p/{{ project_id }}/t:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body) == 3
+    && current.res.body[0] == "tag-a"
+    && current.res.body[1] == "tag-b"
+    && current.res.body[2] == "tag-d"
+
+# 存在しないプロジェクトのタグ取得
+- desc: 存在しないプロジェクトのタグ取得で404エラー
+  req:
+    /api/v0/p/7fffffffffffffff/t:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# クリーンアップ
+- desc: レコード2を削除
+  req:
+    /api/v0/r/{{ record_id_2 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: レコード3を削除
+  req:
+    /api/v0/r/{{ record_id_3 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
