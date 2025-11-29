@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"slices"
 	"strings"
@@ -149,9 +150,9 @@ func TestGetNonExistentRecord(t *testing.T) {
 		t.Error("Expected error when getting non-existent record, got nil")
 	}
 
-	// エラーメッセージが期待どおりであることを確認
-	if err != nil && err.Error() != "record not found" {
-		t.Errorf("Expected 'record not found' error, got '%v'", err)
+	// エラーが期待どおりであることを確認
+	if err != nil && !errors.Is(err, model.ErrRecordNotFound) {
+		t.Errorf("Expected ErrRecordNotFound, got '%v'", err)
 	}
 }
 
@@ -211,8 +212,8 @@ func TestDeleteRecord(t *testing.T) {
 		t.Error("Expected error when getting deleted record, got nil")
 	}
 
-	if err != nil && err.Error() != "record not found" {
-		t.Errorf("Expected 'record not found' error, got '%v'", err)
+	if err != nil && !errors.Is(err, model.ErrRecordNotFound) {
+		t.Errorf("Expected ErrRecordNotFound, got '%v'", err)
 	}
 
 	// 存在しないレコードの削除を試みる
@@ -221,8 +222,8 @@ func TestDeleteRecord(t *testing.T) {
 		t.Error("Expected error when deleting non-existent record, got nil")
 	}
 
-	if err != nil && err.Error() != "record not found" {
-		t.Errorf("Expected 'record not found' error, got '%v'", err)
+	if err != nil && !errors.Is(err, model.ErrRecordNotFound) {
+		t.Errorf("Expected ErrRecordNotFound, got '%v'", err)
 	}
 }
 

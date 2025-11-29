@@ -2,7 +2,6 @@
 package model
 
 import (
-	"errors"
 	"strings"
 	"time"
 )
@@ -39,7 +38,7 @@ func NewRecord(timestamp time.Time, projectID HexID, value int, tags []string) (
 func LoadRecord(id HexID, timestamp time.Time, projectID HexID, value int, tags []string) (*Record, error) {
 	// LoadRecordはDBから読み込んだレコード用なので、IDは必須
 	if !id.IsValid() {
-		return nil, errors.New("id is required for loaded record")
+		return nil, NewValidationError("id is required for loaded record")
 	}
 
 	if tags == nil {
@@ -63,22 +62,22 @@ func LoadRecord(id HexID, timestamp time.Time, projectID HexID, value int, tags 
 func (r *Record) Validate() error {
 	// 日時の検証
 	if r.Timestamp.IsZero() {
-		return errors.New("timestamp is required")
+		return NewValidationError("timestamp is required")
 	}
 
 	// プロジェクトIDの検証
 	if !r.ProjectID.IsValid() {
-		return errors.New("project_id is required")
+		return NewValidationError("project_id is required")
 	}
 
 	// タグの検証
 	for _, tag := range r.Tags {
 		if tag == "" {
-			return errors.New("tag cannot be empty")
+			return NewValidationError("tag cannot be empty")
 		}
 		// スペースは区切り文字として使用するため禁止
 		if strings.Contains(tag, " ") {
-			return errors.New("tag cannot contain spaces")
+			return NewValidationError("tag cannot contain spaces")
 		}
 	}
 
