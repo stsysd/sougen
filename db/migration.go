@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"database/sql"
@@ -8,11 +8,11 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-//go:embed db/schema/*.sql
+//go:embed schema/*.sql
 var embedMigrations embed.FS
 
-// runMigrations はデータベースに対してマイグレーションを実行します。
-func runMigrations(conn *sql.DB) error {
+// Migrate はデータベースに対してマイグレーションを実行します。
+func Migrate(conn *sql.DB) error {
 	// 外部キー制約を有効化
 	_, err := conn.Exec(`PRAGMA foreign_keys = ON;`)
 	if err != nil {
@@ -28,7 +28,7 @@ func runMigrations(conn *sql.DB) error {
 	}
 
 	// マイグレーションを実行
-	if err := goose.Up(conn, "db/schema"); err != nil {
+	if err := goose.Up(conn, "schema"); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
