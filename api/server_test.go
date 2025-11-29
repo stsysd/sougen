@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"iter"
 	"net/http"
@@ -59,7 +58,7 @@ func (m *MockStore) CreateRecord(ctx context.Context, record *model.Record) erro
 func (m *MockStore) GetRecord(ctx context.Context, id model.HexID) (*model.Record, error) {
 	record, exists := m.records[id.ToInt64()]
 	if !exists {
-		return nil, fmt.Errorf("record not found")
+		return nil, model.ErrRecordNotFound
 	}
 	return record, nil
 }
@@ -70,7 +69,7 @@ func (m *MockStore) UpdateRecord(ctx context.Context, record *model.Record) erro
 	}
 	_, exists := m.records[record.ID.ToInt64()]
 	if !exists {
-		return fmt.Errorf("record not found")
+		return model.ErrRecordNotFound
 	}
 	m.records[record.ID.ToInt64()] = record
 	return nil
@@ -79,7 +78,7 @@ func (m *MockStore) UpdateRecord(ctx context.Context, record *model.Record) erro
 func (m *MockStore) DeleteRecord(ctx context.Context, id model.HexID) error {
 	_, exists := m.records[id.ToInt64()]
 	if !exists {
-		return fmt.Errorf("record not found")
+		return model.ErrRecordNotFound
 	}
 	delete(m.records, id.ToInt64())
 	return nil
@@ -238,14 +237,14 @@ func (m *MockStore) CreateProject(ctx context.Context, project *model.Project) e
 func (m *MockStore) GetProject(ctx context.Context, id model.HexID) (*model.Project, error) {
 	project, exists := m.projects[id.ToInt64()]
 	if !exists {
-		return nil, errors.New("project not found")
+		return nil, model.ErrProjectNotFound
 	}
 	return project, nil
 }
 
 func (m *MockStore) UpdateProject(ctx context.Context, project *model.Project) error {
 	if _, exists := m.projects[project.ID.ToInt64()]; !exists {
-		return errors.New("project not found")
+		return model.ErrProjectNotFound
 	}
 	m.projects[project.ID.ToInt64()] = project
 	return nil
@@ -253,7 +252,7 @@ func (m *MockStore) UpdateProject(ctx context.Context, project *model.Project) e
 
 func (m *MockStore) DeleteProjectEntity(ctx context.Context, id int64) error {
 	if _, exists := m.projects[id]; !exists {
-		return errors.New("project not found")
+		return model.ErrProjectNotFound
 	}
 	delete(m.projects, id)
 	return nil
@@ -298,7 +297,7 @@ func (m *MockStore) ListProjects(ctx context.Context, params *store.ListProjects
 func (m *MockStore) GetProjectTags(ctx context.Context, projectID model.HexID) ([]string, error) {
 	// プロジェクトの存在確認
 	if _, exists := m.projects[projectID.ToInt64()]; !exists {
-		return nil, errors.New("project not found")
+		return nil, model.ErrProjectNotFound
 	}
 
 	// プロジェクトのレコードからユニークなタグを収集
