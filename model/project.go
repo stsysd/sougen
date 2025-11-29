@@ -2,7 +2,6 @@
 package model
 
 import (
-	"errors"
 	"time"
 )
 
@@ -50,13 +49,13 @@ func LoadProject(id HexID, name, description string, createdAt, updatedAt time.T
 // Validate はプロジェクトのデータバリデーションを行います。
 func (p *Project) Validate() error {
 	if p.Name == "" {
-		return errors.New("name is required")
+		return NewValidationError("name is required")
 	}
 	if p.CreatedAt.IsZero() {
-		return errors.New("created_at is required")
+		return NewValidationError("created_at is required")
 	}
 	if p.UpdatedAt.IsZero() {
-		return errors.New("updated_at is required")
+		return NewValidationError("updated_at is required")
 	}
 	return nil
 }
