@@ -27,15 +27,14 @@ steps:
     && current.res.body.error != ""
 
 # 存在しないプロジェクトIDで削除
-- desc: 存在しないプロジェクトを削除しようとして404エラー
+- desc: 存在しないプロジェクトを削除（べき等性により204を返す）
   req:
     /api/v0/p/7fffffffffffffff:
       delete:
         headers:
           X-API-KEY: '{{ vars.api_key }}'
   test: |
-    current.res.status == 404
-    && current.res.body.error != ""
+    current.res.status == 204
 
 # 不正なID形式
 - desc: 不正な形式のプロジェクトIDで取得しようとして400エラー

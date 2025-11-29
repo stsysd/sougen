@@ -97,7 +97,7 @@ FROM projects
 WHERE id = ?;
 
 -- name: UpdateProject :execresult
-UPDATE projects SET description = ?, updated_at = ?
+UPDATE projects SET name = ?, description = ?, updated_at = ?
 WHERE id = ?;
 
 -- name: DeleteProject :exec

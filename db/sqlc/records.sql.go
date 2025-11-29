@@ -442,18 +442,24 @@ func (q *Queries) ListRecordsWithTags(ctx context.Context, arg ListRecordsWithTa
 }
 
 const updateProject = `-- name: UpdateProject :execresult
-UPDATE projects SET description = ?, updated_at = ?
+UPDATE projects SET name = ?, description = ?, updated_at = ?
 WHERE id = ?
 `
 
 type UpdateProjectParams struct {
+	Name        string `db:"name" json:"name"`
 	Description string `db:"description" json:"description"`
 	UpdatedAt   string `db:"updated_at" json:"updated_at"`
 	ID          int64  `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, updateProject, arg.Description, arg.UpdatedAt, arg.ID)
+	return q.db.ExecContext(ctx, updateProject,
+		arg.Name,
+		arg.Description,
+		arg.UpdatedAt,
+		arg.ID,
+	)
 }
 
 const updateRecord = `-- name: UpdateRecord :execresult
