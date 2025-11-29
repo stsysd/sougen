@@ -1,0 +1,113 @@
+desc: プロジェクト一覧のページネーションテスト
+steps:
+# 複数のプロジェクトを作成
+- desc: プロジェクト1を作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "project-01"
+            description: "1番目"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id_1: current.res.body.id
+
+- desc: プロジェクト2を作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "project-02"
+            description: "2番目"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id_2: current.res.body.id
+
+- desc: プロジェクト3を作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "project-03"
+            description: "3番目"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id_3: current.res.body.id
+
+# ページサイズ2で1ページ目を取得
+- desc: ページサイズ2で1ページ目を取得（カーソルあり）
+  req:
+    /api/v0/p?limit=2:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 2
+    && "cursor" in current.res.body
+    && current.res.body.cursor != ""
+  bind:
+    cursor: current.res.body.cursor
+
+# カーソルを使って2ページ目を取得
+- desc: カーソルを使って2ページ目を取得
+  req:
+    /api/v0/p?limit=2&cursor={{ cursor }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 1
+    && !("cursor" in current.res.body)
+
+# 全件取得（デフォルトlimit）
+- desc: limitなしで全件取得
+  req:
+    /api/v0/p:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 3
+
+# クリーンアップ
+- desc: プロジェクト1を削除
+  req:
+    /api/v0/p/{{ project_id_1 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: プロジェクト2を削除
+  req:
+    /api/v0/p/{{ project_id_2 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: プロジェクト3を削除
+  req:
+    /api/v0/p/{{ project_id_3 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204

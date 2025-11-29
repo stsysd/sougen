@@ -1,0 +1,192 @@
+desc: レコードの一括削除テスト - 日付指定での削除
+steps:
+# プロジェクトを作成
+- desc: テスト用プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "bulk-delete-test"
+            description: "一括削除テスト用"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# 複数のレコードを作成（異なる日付）
+- desc: 2023-12-01のレコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 1
+            timestamp: "2023-12-01T10:00:00Z"
+            tags: ["old"]
+  test: |
+    current.res.status == 201
+  bind:
+    old_record_id: current.res.body.id
+
+- desc: 2024-01-10のレコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 2
+            timestamp: "2024-01-10T10:00:00Z"
+            tags: ["mid"]
+  test: |
+    current.res.status == 201
+  bind:
+    mid_record_id: current.res.body.id
+
+- desc: 2024-02-01のレコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 3
+            timestamp: "2024-02-01T10:00:00Z"
+            tags: ["new"]
+  test: |
+    current.res.status == 201
+  bind:
+    new_record_id: current.res.body.id
+
+# プロジェクトでフィルタして3件のレコード確認
+- desc: プロジェクトでフィルタしてレコードが3件存在することを確認
+  req:
+    /api/v0/r?project_id={{ project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 3
+
+# 2024-01-01より前のレコードを一括削除
+- desc: 2024-01-01より前のレコードを一括削除
+  req:
+    /api/v0/bulk-deletion:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            until: "2024-01-01T00:00:00Z"
+  test: |
+    current.res.status == 200
+
+# 削除後は2件のレコードのみ残る
+- desc: プロジェクトでフィルタして2024-01-01以降のレコード2件のみ残る
+  req:
+    /api/v0/r?project_id={{ project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 2
+
+# 削除されたレコードにアクセスして404確認
+- desc: 削除されたレコードにアクセスして404エラー
+  req:
+    /api/v0/r/{{ old_record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+
+# 残っているレコードにはアクセス可能
+- desc: 中間のレコードはまだ存在
+  req:
+    /api/v0/r/{{ mid_record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+
+- desc: 最新のレコードも存在
+  req:
+    /api/v0/r/{{ new_record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+
+# プロジェクトIDを指定して一括削除
+- desc: 特定プロジェクトの2024-01-15より前のレコードを削除
+  req:
+    /api/v0/bulk-deletion:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            until: "2024-01-15T00:00:00Z"
+  test: |
+    current.res.status == 200
+
+# 1件のみ残る
+- desc: プロジェクトでフィルタして最新のレコード1件のみ残る
+  req:
+    /api/v0/r?project_id={{ project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 1
+    && current.res.body.items[0].id == new_record_id
+
+# バリデーションエラー：untilパラメータなし
+- desc: untilパラメータなしで一括削除しようとして400エラー
+  req:
+    /api/v0/bulk-deletion:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# クリーンアップ
+- desc: 残りのレコードを削除
+  req:
+    /api/v0/r/{{ new_record_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204

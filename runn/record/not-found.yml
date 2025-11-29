@@ -1,0 +1,113 @@
+desc: レコードのNot Foundエラーテスト - 存在しないリソースへのアクセス
+steps:
+# まずプロジェクトを作成
+- desc: テスト用プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "not-found-test"
+            description: "Not Foundテスト用"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# 存在しないレコードIDで取得
+- desc: 存在しないレコードを取得しようとして404エラー
+  req:
+    /api/v0/r/7fffffffffffffff:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# 存在しないレコードIDで更新
+- desc: 存在しないレコードを更新しようとして404エラー
+  req:
+    /api/v0/r/7fffffffffffffff:
+      put:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 100
+            timestamp: "2024-01-01T00:00:00Z"
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# 存在しないレコードIDで削除
+- desc: 存在しないレコードを削除しようとして404エラー
+  req:
+    /api/v0/r/7fffffffffffffff:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# 不正なID形式
+- desc: 不正な形式のレコードIDで取得しようとして400エラー
+  req:
+    /api/v0/r/invalid-id:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# レコードを作成してから削除し、その後アクセス
+- desc: レコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 99
+            timestamp: "2024-01-01T12:00:00Z"
+            tags: ["temp"]
+  test: |
+    current.res.status == 201
+  bind:
+    deleted_record_id: current.res.body.id
+
+- desc: レコードを削除
+  req:
+    /api/v0/r/{{ deleted_record_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: 削除済みレコードにアクセスして404エラー
+  req:
+    /api/v0/r/{{ deleted_record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# クリーンアップ
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204

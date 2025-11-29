@@ -1,0 +1,144 @@
+desc: レコード一覧のページネーションテスト
+steps:
+# まずプロジェクトを作成
+- desc: テスト用プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "pagination-test"
+            description: "ページネーションテスト用"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# 複数のレコードを作成
+- desc: レコード1を作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 10
+            timestamp: "2024-01-01T10:00:00Z"
+            tags: ["tag1"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_1: current.res.body.id
+
+- desc: レコード2を作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 20
+            timestamp: "2024-01-02T10:00:00Z"
+            tags: ["tag2"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_2: current.res.body.id
+
+- desc: レコード3を作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 30
+            timestamp: "2024-01-03T10:00:00Z"
+            tags: ["tag3"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_3: current.res.body.id
+
+# ページサイズ2で1ページ目を取得
+- desc: プロジェクトでフィルタしてページサイズ2で1ページ目を取得（カーソルあり）
+  req:
+    /api/v0/r?project_id={{ project_id }}&from=2023-01-01&to=2025-12-31&limit=2:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 2
+    && "cursor" in current.res.body
+    && current.res.body.cursor != ""
+  bind:
+    cursor: current.res.body.cursor
+
+# カーソルを使って2ページ目を取得
+- desc: カーソルを使って2ページ目を取得
+  req:
+    /api/v0/r?project_id={{ project_id }}&from=2023-01-01&to=2025-12-31&limit=2&cursor={{ cursor }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 1
+    && !("cursor" in current.res.body)
+
+# プロジェクトIDでフィルタリング
+- desc: プロジェクトIDでフィルタリングして取得
+  req:
+    /api/v0/r?project_id={{ project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 3
+
+# クリーンアップ
+- desc: レコード1を削除
+  req:
+    /api/v0/r/{{ record_id_1 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: レコード2を削除
+  req:
+    /api/v0/r/{{ record_id_2 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: レコード3を削除
+  req:
+    /api/v0/r/{{ record_id_3 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204

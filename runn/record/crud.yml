@@ -1,0 +1,126 @@
+desc: レコードのCRUD操作テスト - 作成、取得、更新、削除の完全フロー
+steps:
+# まずプロジェクトを作成（レコードはプロジェクトに属する）
+- desc: テスト用プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "test-project"
+            description: "レコードテスト用"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# レコード作成
+- desc: レコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 42
+            timestamp: "2024-01-15T10:30:00Z"
+            tags: ["tag1", "tag2"]
+  test: |
+    current.res.status == 201
+    && current.res.body.project_id == project_id
+    && current.res.body.value == 42
+    && current.res.body.id != ""
+    && len(current.res.body.tags) == 2
+  bind:
+    record_id: current.res.body.id
+
+# レコード一覧取得（プロジェクトでフィルタ）
+- desc: プロジェクトでフィルタしてレコードを取得
+  req:
+    /api/v0/r?project_id={{ project_id }}&from=2023-01-01&to=2025-12-31:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) == 1
+    && current.res.body.items[0].id == record_id
+
+# レコード詳細取得
+- desc: IDを指定してレコード詳細を取得
+  req:
+    /api/v0/r/{{ record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && current.res.body.id == record_id
+    && current.res.body.project_id == project_id
+    && current.res.body.value == 42
+
+# レコード更新
+- desc: レコードの値とタグを更新
+  req:
+    /api/v0/r/{{ record_id }}:
+      put:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 100
+            timestamp: "2024-01-15T10:30:00Z"
+            tags: ["updated-tag"]
+  test: |
+    current.res.status == 200
+    && current.res.body.id == record_id
+    && current.res.body.value == 100
+    && len(current.res.body.tags) == 1
+    && current.res.body.tags[0] == "updated-tag"
+
+# 更新後の取得で確認
+- desc: 更新後にレコード詳細を取得して変更を確認
+  req:
+    /api/v0/r/{{ record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && current.res.body.value == 100
+    && current.res.body.tags[0] == "updated-tag"
+
+# レコード削除
+- desc: レコードを削除
+  req:
+    /api/v0/r/{{ record_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+# 削除後の確認
+- desc: 削除済みレコードにアクセスして404エラー
+  req:
+    /api/v0/r/{{ record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+
+# クリーンアップ
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204

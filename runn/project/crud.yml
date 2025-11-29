@@ -1,0 +1,93 @@
+desc: プロジェクトのCRUD操作テスト - 作成、取得、更新、削除の完全フロー
+steps:
+# プロジェクト作成
+- desc: プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "test-project"
+            description: "テストプロジェクト"
+  test: |
+    current.res.status == 201
+    && current.res.body.name == "test-project"
+    && current.res.body.description == "テストプロジェクト"
+    && current.res.body.id != ""
+  bind:
+    project_id: current.res.body.id
+
+# プロジェクト一覧取得
+- desc: プロジェクト一覧に作成したプロジェクトが含まれる
+  req:
+    /api/v0/p:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && len(current.res.body.items) >= 1
+
+# プロジェクト詳細取得
+- desc: IDを指定してプロジェクト詳細を取得
+  req:
+    /api/v0/p/{{ project_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && current.res.body.id == project_id
+    && current.res.body.name == "test-project"
+    && current.res.body.description == "テストプロジェクト"
+
+# プロジェクト更新
+- desc: プロジェクトの名前と説明を更新
+  req:
+    /api/v0/p/{{ project_id }}:
+      put:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "updated-project"
+            description: "更新されたプロジェクト"
+  test: |
+    current.res.status == 200
+    && current.res.body.id == project_id
+    && current.res.body.name == "updated-project"
+    && current.res.body.description == "更新されたプロジェクト"
+
+# 更新後の取得で確認
+- desc: 更新後にプロジェクト詳細を取得して変更を確認
+  req:
+    /api/v0/p/{{ project_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && current.res.body.name == "updated-project"
+    && current.res.body.description == "更新されたプロジェクト"
+
+# プロジェクト削除
+- desc: プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+# 削除後の確認
+- desc: 削除済みプロジェクトにアクセスして404エラー
+  req:
+    /api/v0/p/{{ project_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404

@@ -1,0 +1,148 @@
+desc: レコードのバリデーションエラーテスト
+steps:
+# まずプロジェクトを作成
+- desc: テスト用プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "validation-test"
+            description: "バリデーションテスト用"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# project_idなし
+- desc: プロジェクトIDなしでレコード作成しようとして400エラー
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            value: 10
+            timestamp: "2024-01-01T00:00:00Z"
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# 不正なproject_id形式
+- desc: 不正な形式のプロジェクトIDでレコード作成しようとして400エラー
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: "invalid-id"
+            value: 10
+            timestamp: "2024-01-01T00:00:00Z"
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# 空のタグを含む
+- desc: 空のタグを含むレコード作成しようとして400エラー
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 10
+            timestamp: "2024-01-01T00:00:00Z"
+            tags: ["valid-tag", "", "another-tag"]
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# スペースを含むタグ
+- desc: スペースを含むタグでレコード作成しようとして400エラー
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 10
+            timestamp: "2024-01-01T00:00:00Z"
+            tags: ["tag with space"]
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# 正常なレコードを作成してから更新でバリデーションエラー
+- desc: 正常なレコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 50
+            timestamp: "2024-01-01T12:00:00Z"
+            tags: ["valid"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id: current.res.body.id
+
+# 更新時に空のタグを含む
+- desc: 更新時に空のタグを含めて400エラー
+  req:
+    /api/v0/r/{{ record_id }}:
+      put:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 60
+            timestamp: "2024-01-01T12:00:00Z"
+            tags: [""]
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# バリデーションエラー後も元の値が保持される
+- desc: バリデーションエラー後も元の値が保持される
+  req:
+    /api/v0/r/{{ record_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 200
+    && current.res.body.value == 50
+    && current.res.body.tags[0] == "valid"
+
+# クリーンアップ
+- desc: テスト用レコードを削除
+  req:
+    /api/v0/r/{{ record_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204

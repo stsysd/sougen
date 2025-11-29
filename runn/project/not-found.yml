@@ -1,0 +1,84 @@
+desc: プロジェクトのNot Foundエラーテスト - 存在しないリソースへのアクセス
+steps:
+# 存在しないプロジェクトIDで取得
+- desc: 存在しないプロジェクトを取得しようとして404エラー
+  req:
+    /api/v0/p/7fffffffffffffff:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# 存在しないプロジェクトIDで更新
+- desc: 存在しないプロジェクトを更新しようとして404エラー
+  req:
+    /api/v0/p/7fffffffffffffff:
+      put:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "updated-name"
+            description: "更新しようとする"
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# 存在しないプロジェクトIDで削除
+- desc: 存在しないプロジェクトを削除しようとして404エラー
+  req:
+    /api/v0/p/7fffffffffffffff:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""
+
+# 不正なID形式
+- desc: 不正な形式のプロジェクトIDで取得しようとして400エラー
+  req:
+    /api/v0/p/invalid-id:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 400
+    && current.res.body.error != ""
+
+# プロジェクトを作成してから削除し、その後アクセス
+- desc: プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "temp-project"
+            description: "一時的なプロジェクト"
+  test: |
+    current.res.status == 201
+  bind:
+    deleted_project_id: current.res.body.id
+
+- desc: プロジェクトを削除
+  req:
+    /api/v0/p/{{ deleted_project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: 削除済みプロジェクトにアクセスして404エラー
+  req:
+    /api/v0/p/{{ deleted_project_id }}:
+      get:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 404
+    && current.res.body.error != ""

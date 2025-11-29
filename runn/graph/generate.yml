@@ -1,0 +1,137 @@
+desc: グラフ（SVGヒートマップ）生成テスト
+steps:
+# プロジェクトを作成
+- desc: テスト用プロジェクトを作成
+  req:
+    /api/v0/p:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            name: "graph-test"
+            description: "グラフテスト用"
+  test: |
+    current.res.status == 201
+  bind:
+    project_id: current.res.body.id
+
+# レコードを複数作成
+- desc: 2024-01-01のレコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 5
+            timestamp: "2024-01-01T10:00:00Z"
+            tags: ["day1"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_1: current.res.body.id
+
+- desc: 2024-01-15のレコードを作成
+  req:
+    /api/v0/r:
+      post:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+        body:
+          application/json:
+            project_id: '{{ project_id }}'
+            value: 10
+            timestamp: "2024-01-15T14:30:00Z"
+            tags: ["day15"]
+  test: |
+    current.res.status == 201
+  bind:
+    record_id_2: current.res.body.id
+
+# .svg拡張子ありでグラフを取得
+- desc: 拡張子ありでSVGグラフを取得
+  req:
+    /p/{{ project_id }}/graph.svg:
+      get:
+        body:
+  test: |
+    current.res.status == 200
+    && hasPrefix(current.res.headers["Content-Type"][0], "image/svg+xml")
+
+# 拡張子なしでグラフを取得
+- desc: 拡張子なしでSVGグラフを取得
+  req:
+    /p/{{ project_id }}/graph:
+      get:
+        body:
+  test: |
+    current.res.status == 200
+    && hasPrefix(current.res.headers["Content-Type"][0], "image/svg+xml")
+
+# 日付範囲を指定してグラフを取得
+- desc: 開始日を指定してグラフを取得
+  req:
+    /p/{{ project_id }}/graph.svg?from=2024-01-01:
+      get:
+        body:
+  test: |
+    current.res.status == 200
+    && hasPrefix(current.res.headers["Content-Type"][0], "image/svg+xml")
+
+- desc: 開始日と終了日を指定してグラフを取得
+  req:
+    /p/{{ project_id }}/graph.svg?from=2024-01-01&to=2024-01-31:
+      get:
+        body:
+  test: |
+    current.res.status == 200
+    && hasPrefix(current.res.headers["Content-Type"][0], "image/svg+xml")
+
+# 存在しないプロジェクトでグラフ取得
+- desc: 存在しないプロジェクトでグラフを取得しようとして404エラー
+  req:
+    /p/7fffffffffffffff/graph.svg:
+      get:
+        body:
+  test: |
+    current.res.status == 404
+
+# 不正なプロジェクトID形式
+- desc: 不正な形式のプロジェクトIDでグラフを取得しようとして400エラー
+  req:
+    /p/invalid-id/graph.svg:
+      get:
+        body:
+  test: |
+    current.res.status == 400
+
+# クリーンアップ
+- desc: レコード1を削除
+  req:
+    /api/v0/r/{{ record_id_1 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: レコード2を削除
+  req:
+    /api/v0/r/{{ record_id_2 }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
+
+- desc: テスト用プロジェクトを削除
+  req:
+    /api/v0/p/{{ project_id }}:
+      delete:
+        headers:
+          X-API-KEY: '{{ vars.api_key }}'
+  test: |
+    current.res.status == 204
