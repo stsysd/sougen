@@ -509,10 +509,10 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
 				return
 			}
-			localTime := record.Timestamp.Local()
-			hour := localTime.Hour()
+			utcTime := record.Timestamp.UTC()
+			hour := utcTime.Hour()
 			slot := hour / 4 // 0-5 for 6 time slots
-			key := fmt.Sprintf("%s-%d", localTime.Format("2006-01-02"), slot)
+			key := fmt.Sprintf("%s-%d", utcTime.Format("2006-01-02"), slot)
 			dateHourMap[key] += record.Value
 		}
 
@@ -544,7 +544,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
 				return
 			}
-			dateString := record.Timestamp.Local().Format("2006-01-02")
+			dateString := record.Timestamp.UTC().Format("2006-01-02")
 			dateMap[dateString] += record.Value
 		}
 
