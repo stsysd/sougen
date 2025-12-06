@@ -14,12 +14,12 @@ import (
 )
 
 func TestRouter(t *testing.T) {
-  os.Setenv("SOUGEN_API_KEY", "test-token")
+	os.Setenv("SOUGEN_API_KEY", "test-token")
 	os.Setenv("SOUGEN_DATA_DIR", "./testdata")
 
-  if err := os.RemoveAll("./testdata"); err != nil {
-    t.Fatalf("Failed to clean test data dir: %v", err)
-  }
+	if err := os.RemoveAll("./testdata"); err != nil {
+		t.Fatalf("Failed to clean test data dir: %v", err)
+	}
 
 	// 設定の読み込み
 	cfg := config.NewConfig()
@@ -42,7 +42,7 @@ func TestRouter(t *testing.T) {
 	opts := []runn.Option{
 		runn.T(t),
 		runn.Runner("req", ts.URL),
-    runn.Var("api_key", "test-token"),
+		runn.Var("api_key", "test-token"),
 	}
 	o, err := runn.Load("./**/*.yml", opts...)
 	if err != nil {
