@@ -126,10 +126,10 @@ func TestNewDateRange(t *testing.T) {
 			toStr:   "2025-01-02",
 			wantErr: false,
 			checkFn: func(dr *DateRange) bool {
-				// from should be normalized to 00:00:00
-				expectedFrom := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-				// to should be normalized to 23:59:59.999999999
-				expectedTo := time.Date(2025, 1, 2, 23, 59, 59, 999999999, time.UTC)
+				// from should be normalized to 00:00:00 in local timezone
+				expectedFrom := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
+				// to should be normalized to 23:59:59.999999999 in local timezone
+				expectedTo := time.Date(2025, 1, 2, 23, 59, 59, 999999999, time.Local)
 				return dr.From().Equal(expectedFrom) && dr.To().Equal(expectedTo)
 			},
 		},

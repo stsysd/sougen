@@ -191,15 +191,15 @@ func normalizeToEndOfDay(t time.Time) time.Time {
 }
 
 // parseDateTime parses date string with flexible format support.
-// Date-only format (YYYY-MM-DD) is interpreted as UTC.
+// Date-only format (YYYY-MM-DD) is interpreted in server's local timezone.
 func parseDateTime(dateStr string) (time.Time, error) {
 	// Try RFC3339 format first (with time and timezone)
 	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
 		return t, nil
 	}
 
-	// Try date-only format (YYYY-MM-DD) - explicitly parse as UTC
-	if t, err := time.ParseInLocation("2006-01-02", dateStr, time.UTC); err == nil {
+	// Try date-only format (YYYY-MM-DD) - parse in server's local timezone
+	if t, err := time.ParseInLocation("2006-01-02", dateStr, time.Local); err == nil {
 		return t, nil
 	}
 
