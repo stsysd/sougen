@@ -2868,7 +2868,7 @@ func TestGetGraphWeeklyViewDefaultDateRange(t *testing.T) {
 	record, _ := model.NewRecord(now, projectID, 5, nil)
 	mockStore.CreateRecord(context.Background(), record)
 
-	// デフォルトの日付範囲で週次ビューを取得（8週間前から今日まで）
+	// デフォルトの日付範囲で週次ビューを取得（直近4つの月曜日を含む期間）
 	url := fmt.Sprintf("/p/%s/graph.svg?view=weekly", projectID)
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 

@@ -420,9 +420,18 @@ func NewGetGraphParams(r *http.Request) (*GetGraphParams, error) {
 	fromStr := query.Get("from")
 	toStr := query.Get("to")
 	if fromStr == "" && toStr == "" && viewType == "weekly" {
-		// weeklyの場合、デフォルトは8週間前から今日まで
+		// weeklyの場合、直近4つの月曜日を含む期間
 		now := time.Now()
-		from := now.AddDate(0, 0, -56) // 8 weeks
+
+		// 今週の月曜日を計算
+		weekday := int(now.Weekday())
+		if weekday == 0 { // 日曜日の場合
+			weekday = 7
+		}
+		thisMonday := now.AddDate(0, 0, -(weekday - 1))
+
+		// 3週間前の月曜日を開始日とする（計4つの月曜日を含む）
+		from := thisMonday.AddDate(0, 0, -21) // 3 weeks before this Monday
 		fromStr = from.Format("2006-01-02")
 		toStr = now.Format("2006-01-02")
 	}

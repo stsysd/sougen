@@ -51,8 +51,9 @@ func GenerateWeeklyHeatmapSVG(data []Data, opts *Options) string {
 	// calculate required number of days
 	dayDiff := int(endDate.Sub(firstMonday).Hours()/24) + 1
 	days := dayDiff
-	if days < 56 { // minimum 8 weeks
-		days = 56
+	// 最低4週間分（28日）を表示、足りない場合は右側に余白を追加
+	if days < 28 {
+		days = 28
 	}
 
 	// compute dimensions

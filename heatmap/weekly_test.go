@@ -190,7 +190,7 @@ func TestGenerateWeeklyHeatmapSVG_WeekAlignment(t *testing.T) {
 		t.Error("Expected SVG to be generated")
 	}
 
-	// 最小8週間分（56日）のデータが含まれることを確認
+	// 最小4週間分（28日）のデータが含まれることを確認
 	// 実際のセル数は data-date 属性の出現回数で確認できる
 	// ただし、値が0のセルは出力されないので、data-date の存在だけでは判断できない
 	// 代わりに、SVGのサイズが適切かを確認
