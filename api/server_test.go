@@ -2785,3 +2785,220 @@ func TestListProjectsEmptyResponse(t *testing.T) {
 		t.Errorf("Expected empty array, got %d items", len(response.Items))
 	}
 }
+
+// TestGetGraphWeeklyView は週次ビューのヒートマップ生成のテスト
+func TestGetGraphWeeklyView(t *testing.T) {
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
+	// 異なる時間帯のレコードを作成
+	// 2025-05-21 10:00 (スロット2: 8-12時)
+	record1, _ := model.NewRecord(time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC), projectID, 5, nil)
+	// 2025-05-21 15:00 (スロット3: 12-16時)
+	record2, _ := model.NewRecord(time.Date(2025, 5, 21, 15, 0, 0, 0, time.UTC), projectID, 3, nil)
+	// 2025-05-22 09:00 (スロット2: 8-12時)
+	record3, _ := model.NewRecord(time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC), projectID, 2, nil)
+
+	mockStore.CreateRecord(context.Background(), record1)
+	mockStore.CreateRecord(context.Background(), record2)
+	mockStore.CreateRecord(context.Background(), record3)
+
+	// 週次ビューでのヒートマップ生成
+	url := fmt.Sprintf("/p/%s/graph.svg?view=weekly&from=2025-05-01&to=2025-05-31", projectID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "image/svg+xml" {
+		t.Errorf("Expected Content-Type 'image/svg+xml', got '%s'", contentType)
+	}
+
+	svgContent := w.Body.String()
+	if len(svgContent) == 0 {
+		t.Error("Expected non-empty SVG content")
+	}
+
+	// SVGの基本構造チェック
+	if !strings.Contains(svgContent, "<svg") {
+		t.Error("Response does not contain SVG tag")
+	}
+
+	// 日付とスロット情報が含まれることを確認
+	if !strings.Contains(svgContent, `data-date="2025-05-21"`) {
+		t.Error("Expected data point for 2025-05-21")
+	}
+
+	if !strings.Contains(svgContent, `data-slot="2"`) {
+		t.Error("Expected data with slot 2 (8-12時)")
+	}
+
+	if !strings.Contains(svgContent, `data-slot="3"`) {
+		t.Error("Expected data with slot 3 (12-16時)")
+	}
+
+	// 値が正しく集計されていることを確認
+	if !strings.Contains(svgContent, `data-value="5"`) {
+		t.Error("Expected aggregated value 5")
+	}
+}
+
+// TestGetGraphWeeklyViewDefaultDateRange は週次ビューのデフォルト日付範囲のテスト
+func TestGetGraphWeeklyViewDefaultDateRange(t *testing.T) {
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
+	// 今日のレコードを作成
+	now := time.Now()
+	record, _ := model.NewRecord(now, projectID, 5, nil)
+	mockStore.CreateRecord(context.Background(), record)
+
+	// デフォルトの日付範囲で週次ビューを取得（直近4つの月曜日を含む期間）
+	url := fmt.Sprintf("/p/%s/graph.svg?view=weekly", projectID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	svgContent := w.Body.String()
+	if len(svgContent) == 0 {
+		t.Error("Expected non-empty SVG content")
+	}
+
+	// 今日のデータが含まれることを確認
+	todayStr := now.Format("2006-01-02")
+	if !strings.Contains(svgContent, fmt.Sprintf(`data-date="%s"`, todayStr)) {
+		t.Errorf("Expected data point for today (%s)", todayStr)
+	}
+}
+
+// TestGetGraphWeeklyViewWithTags は週次ビューでのタグフィルタのテスト
+func TestGetGraphWeeklyViewWithTags(t *testing.T) {
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
+	baseTime := time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC)
+
+	// 異なるタグを持つレコードを作成
+	record1, _ := model.NewRecord(baseTime, projectID, 5, []string{"work"})
+	record2, _ := model.NewRecord(baseTime.Add(1*time.Hour), projectID, 3, []string{"personal"})
+	record3, _ := model.NewRecord(baseTime.Add(24*time.Hour), projectID, 7, []string{"work"})
+
+	mockStore.CreateRecord(context.Background(), record1)
+	mockStore.CreateRecord(context.Background(), record2)
+	mockStore.CreateRecord(context.Background(), record3)
+
+	// workタグでフィルタした週次ビューを取得
+	url := fmt.Sprintf("/p/%s/graph.svg?view=weekly&tags=work&from=2025-05-01&to=2025-05-31", projectID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	svgContent := w.Body.String()
+	if len(svgContent) == 0 {
+		t.Error("Expected non-empty SVG content")
+	}
+
+	// タグ情報がタイトルに含まれることを確認
+	if !strings.Contains(svgContent, "tags: work") {
+		t.Error("Expected tags in SVG title")
+	}
+}
+
+// TestGetGraphInvalidViewType は無効なビュータイプのテスト
+func TestGetGraphInvalidViewType(t *testing.T) {
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
+	// 無効なビュータイプでリクエスト
+	url := fmt.Sprintf("/p/%s/graph.svg?view=invalid", projectID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	// 400 Bad Requestが返ることを確認
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d for invalid view type, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	responseBody := w.Body.String()
+	if !strings.Contains(responseBody, "invalid view type") {
+		t.Error("Expected error message about invalid view type")
+	}
+}
+
+// TestGetGraphYearlyViewStillWorking は年次ビューが引き続き動作することを確認
+func TestGetGraphYearlyViewStillWorking(t *testing.T) {
+	mockStore := NewMockStore()
+	server := NewServer(mockStore, newTestConfig())
+
+	// テスト用プロジェクトを作成
+	project, _ := model.NewProject("test-project", "Test project")
+	mockStore.CreateProject(context.Background(), project)
+	projectID := project.ID
+
+	// テスト用のレコードを作成
+	record, _ := model.NewRecord(time.Date(2025, 5, 21, 10, 0, 0, 0, time.UTC), projectID, 5, nil)
+	mockStore.CreateRecord(context.Background(), record)
+
+	// 明示的にview=yearlyを指定
+	url := fmt.Sprintf("/p/%s/graph.svg?view=yearly&from=2025-01-01&to=2025-12-31", projectID)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	svgContent := w.Body.String()
+	if len(svgContent) == 0 {
+		t.Error("Expected non-empty SVG content")
+	}
+
+	// 日付情報が含まれ、スロット情報が含まれないことを確認（年次ビュー）
+	if !strings.Contains(svgContent, `data-date="2025-05-21"`) {
+		t.Error("Expected data point for 2025-05-21")
+	}
+
+	// 年次ビューではスロット情報がないはず
+	if strings.Contains(svgContent, `data-slot=`) {
+		t.Error("Yearly view should not contain slot information")
+	}
+}

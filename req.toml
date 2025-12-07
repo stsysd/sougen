@@ -1,0 +1,12 @@
+[tasks.create-project]
+POST = "http://localhost:8080/api/v0/p"
+
+[tasks.create-project.headers]
+X-API-KEY="${SOUGEN_API_KEY}"
+
+[tasks.create-project.body.json]
+name = "sample"
+description = "サンプル"
+
+[variables]
+SOUGEN_API_KEY = "hoge"
