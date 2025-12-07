@@ -31,10 +31,11 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	endDate := data[len(data)-1].Date
 
 	// map date string to value
+	// Aggregates values for duplicate dates (same date can appear multiple times)
 	valueMap := make(map[string]int, len(data))
 	for _, d := range data {
 		key := d.Date.Format("2006-01-02")
-		valueMap[key] = d.Value
+		valueMap[key] += d.Value
 	}
 
 	// align first column to Sunday

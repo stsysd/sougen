@@ -499,10 +499,50 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 	var data []heatmap.Data
 
 	if params.ViewType == "weekly" {
-		// 週次ビュー: 時間帯別に集計
-		// イテレータを使用してメモリ効率的に全レコードを処理
-		dateHourMap := make(map[string]int)
+		// 週次ビュー: 範囲内のすべての日時スロットを0で初期化し、実レコードを追加
+		// ヒートマップパッケージが重複するタイムスタンプを集計します
 
+		// 範囲内のすべての日時スロットに0値のエントリを作成
+		currentDate := fromDate
+		for !currentDate.After(toDate) {
+			for slot := 0; slot < 6; slot++ {
+				dateWithHour := time.Date(currentDate.Year(), currentDate.Month(), currentDate.Day(),
+					slot*4, 0, 0, 0, currentDate.Location())
+				data = append(data, heatmap.Data{
+					Date:  dateWithHour,
+					Value: 0,
+				})
+			}
+			currentDate = currentDate.AddDate(0, 0, 1)
+		}
+
+		// すべてのレコードを追加（集計せず、ヒートマップが集計）
+		for record, err := range s.store.ListAllRecords(r.Context(), storeParams) {
+			if err != nil {
+				log.Printf("Error retrieving records: %v", err)
+				http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
+				return
+			}
+			data = append(data, heatmap.Data{
+				Date:  record.Timestamp.Local(),
+				Value: record.Value,
+			})
+		}
+	} else {
+		// 年次ビュー: 範囲内のすべての日付を0で初期化し、実レコードを追加
+		// ヒートマップパッケージが重複する日付を集計します
+
+		// 範囲内のすべての日付に0値のエントリを作成
+		currentDate := fromDate
+		for !currentDate.After(toDate) {
+			data = append(data, heatmap.Data{
+				Date:  currentDate,
+				Value: 0,
+			})
+			currentDate = currentDate.AddDate(0, 0, 1)
+		}
+
+		// すべてのレコードを追加（集計せず、ヒートマップが集計）
 		for record, err := range s.store.ListAllRecords(r.Context(), storeParams) {
 			if err != nil {
 				log.Printf("Error retrieving records: %v", err)
@@ -510,54 +550,12 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			localTime := record.Timestamp.Local()
-			hour := localTime.Hour()
-			slot := hour / 4 // 0-5 for 6 time slots
-			key := fmt.Sprintf("%s-%d", localTime.Format("2006-01-02"), slot)
-			dateHourMap[key] += record.Value
-		}
-
-		// ヒートマップ用データの作成（範囲内のすべての日と時間帯を含む）
-		currentDate := fromDate
-		for !currentDate.After(toDate) {
-			dateString := currentDate.Format("2006-01-02")
-			for slot := 0; slot < 6; slot++ {
-				key := fmt.Sprintf("%s-%d", dateString, slot)
-				count := dateHourMap[key] // マップに存在しない場合は0を返す
-				// 時刻情報を含めた Date を作成（スロットの開始時刻）
-				dateWithHour := time.Date(currentDate.Year(), currentDate.Month(), currentDate.Day(),
-					slot*4, 0, 0, 0, currentDate.Location())
-				data = append(data, heatmap.Data{
-					Date:  dateWithHour,
-					Value: count,
-				})
-			}
-			currentDate = currentDate.AddDate(0, 0, 1) // 次の日に移動
-		}
-	} else {
-		// 年次ビュー（デフォルト）: 日付ごとに集計
-		// イテレータを使用してメモリ効率的に全レコードを処理
-		dateMap := make(map[string]int)
-
-		for record, err := range s.store.ListAllRecords(r.Context(), storeParams) {
-			if err != nil {
-				log.Printf("Error retrieving records: %v", err)
-				http.Error(w, "Failed to retrieve records", http.StatusInternalServerError)
-				return
-			}
-			dateString := record.Timestamp.Local().Format("2006-01-02")
-			dateMap[dateString] += record.Value
-		}
-
-		// ヒートマップ用データの作成（範囲内のすべての日を含む）
-		currentDate := fromDate
-		for !currentDate.After(toDate) {
-			dateString := currentDate.Format("2006-01-02")
-			count := dateMap[dateString] // マップに存在しない場合は0を返す
+			dateOnly := time.Date(localTime.Year(), localTime.Month(), localTime.Day(),
+				0, 0, 0, 0, localTime.Location())
 			data = append(data, heatmap.Data{
-				Date:  currentDate,
-				Value: count,
+				Date:  dateOnly,
+				Value: record.Value,
 			})
-			currentDate = currentDate.AddDate(0, 0, 1) // 次の日に移動
 		}
 	}
 
