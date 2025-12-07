@@ -108,6 +108,12 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 	for w := range weeks {
 		for i := range 7 {
 			current := firstSunday.Add(time.Duration(w*7+i) * oneDay)
+
+			// endDateを超えた日付は描画しない
+			if current.After(endDate) {
+				continue
+			}
+
 			key := current.Format("2006-01-02")
 			value := valueMap[key] // 存在しない場合は0
 			level := 0

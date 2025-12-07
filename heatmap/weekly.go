@@ -128,6 +128,11 @@ func GenerateWeeklyHeatmapSVG(data []Data, opts *Options) string {
 		}
 
 		// draw 6 time slot cells for this day
+		// endDateを超えた日付はセルを描画しない（余白として表示）
+		if current.After(endDate) {
+			continue
+		}
+
 		for slot := 0; slot < 6; slot++ {
 			dateKey := current.Format("2006-01-02")
 			key := fmt.Sprintf("%s-%d", dateKey, slot)
