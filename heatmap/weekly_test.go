@@ -237,3 +237,80 @@ func TestGenerateWeeklyHeatmapSVG_Tooltip(t *testing.T) {
 		t.Error("Expected value in tooltip")
 	}
 }
+
+func TestGenerateWeeklyHeatmapSVG_NoFutureDates(t *testing.T) {
+	// 2025-05-19（月曜日）から2025-05-22（木曜日）までのデータを生成
+	// その週の日曜日は2025-05-25
+	// endDateを超えた日付（2025-05-23, 05-24, 05-25）が含まれないことを確認
+
+	data := []Data{
+		{Date: time.Date(2025, 5, 19, 10, 0, 0, 0, time.UTC), Value: 1},
+		{Date: time.Date(2025, 5, 21, 14, 0, 0, 0, time.UTC), Value: 2},
+		{Date: time.Date(2025, 5, 22, 9, 0, 0, 0, time.UTC), Value: 3},
+	}
+
+	opts := &Options{
+		CellSize:    12,
+		CellPadding: 2,
+		FontSize:    10,
+		FontFamily:  "sans-serif",
+		Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
+		From:        time.Date(2025, 5, 19, 0, 0, 0, 0, time.UTC),
+		To:          time.Date(2025, 5, 22, 23, 59, 59, 0, time.UTC),
+	}
+
+	svg := GenerateWeeklyHeatmapSVG(data, opts)
+
+	// SVGが生成されることを確認
+	if !strings.Contains(svg, "<svg") {
+		t.Error("Expected SVG to be generated")
+	}
+
+	// endDate（2025-05-22）は含まれるべき
+	if !strings.Contains(svg, `data-date="2025-05-22"`) {
+		t.Error("Expected endDate (2025-05-22) to be included")
+	}
+
+	// endDateを超えた日付（2025-05-23, 05-24, 05-25）は含まれないべき
+	if strings.Contains(svg, `data-date="2025-05-23"`) {
+		t.Error("Future date 2025-05-23 should not be included")
+	}
+	if strings.Contains(svg, `data-date="2025-05-24"`) {
+		t.Error("Future date 2025-05-24 should not be included")
+	}
+	if strings.Contains(svg, `data-date="2025-05-25"`) {
+		t.Error("Future date 2025-05-25 should not be included")
+	}
+}
+
+func TestGenerateWeeklyHeatmapSVG_EndDateOnSunday(t *testing.T) {
+	// 2025-05-19（月曜日）から2025-05-25（日曜日）までのデータを生成
+	// この場合、日曜日（2025-05-25）までで終わるべき
+
+	data := []Data{
+		{Date: time.Date(2025, 5, 19, 10, 0, 0, 0, time.UTC), Value: 1},
+		{Date: time.Date(2025, 5, 25, 14, 0, 0, 0, time.UTC), Value: 2},
+	}
+
+	opts := &Options{
+		CellSize:    12,
+		CellPadding: 2,
+		FontSize:    10,
+		FontFamily:  "sans-serif",
+		Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
+		From:        time.Date(2025, 5, 19, 0, 0, 0, 0, time.UTC),
+		To:          time.Date(2025, 5, 25, 23, 59, 59, 0, time.UTC),
+	}
+
+	svg := GenerateWeeklyHeatmapSVG(data, opts)
+
+	// endDate（2025-05-25 日曜日）は含まれるべき
+	if !strings.Contains(svg, `data-date="2025-05-25"`) {
+		t.Error("Expected endDate (2025-05-25) to be included")
+	}
+
+	// その次の週の月曜日（2025-05-26）は含まれないべき
+	if strings.Contains(svg, `data-date="2025-05-26"`) {
+		t.Error("Future date 2025-05-26 should not be included")
+	}
+}
