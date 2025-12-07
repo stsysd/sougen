@@ -498,25 +498,11 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 
 	var data []heatmap.Data
 
+	// すべてのレコードを取得してData配列に変換
+	// ヒートマップパッケージが重複するタイムスタンプ/日付を集計し、
+	// 空の日付には自動的に0値を割り当てます
 	if params.ViewType == "weekly" {
-		// 週次ビュー: 範囲内のすべての日時スロットを0で初期化し、実レコードを追加
-		// ヒートマップパッケージが重複するタイムスタンプを集計します
-
-		// 範囲内のすべての日時スロットに0値のエントリを作成
-		currentDate := fromDate
-		for !currentDate.After(toDate) {
-			for slot := 0; slot < 6; slot++ {
-				dateWithHour := time.Date(currentDate.Year(), currentDate.Month(), currentDate.Day(),
-					slot*4, 0, 0, 0, currentDate.Location())
-				data = append(data, heatmap.Data{
-					Date:  dateWithHour,
-					Value: 0,
-				})
-			}
-			currentDate = currentDate.AddDate(0, 0, 1)
-		}
-
-		// すべてのレコードを追加（集計せず、ヒートマップが集計）
+		// 週次ビュー: タイムスタンプをそのまま使用
 		for record, err := range s.store.ListAllRecords(r.Context(), storeParams) {
 			if err != nil {
 				log.Printf("Error retrieving records: %v", err)
@@ -529,20 +515,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	} else {
-		// 年次ビュー: 範囲内のすべての日付を0で初期化し、実レコードを追加
-		// ヒートマップパッケージが重複する日付を集計します
-
-		// 範囲内のすべての日付に0値のエントリを作成
-		currentDate := fromDate
-		for !currentDate.After(toDate) {
-			data = append(data, heatmap.Data{
-				Date:  currentDate,
-				Value: 0,
-			})
-			currentDate = currentDate.AddDate(0, 0, 1)
-		}
-
-		// すべてのレコードを追加（集計せず、ヒートマップが集計）
+		// 年次ビュー: 日付のみを使用（時刻は00:00:00）
 		for record, err := range s.store.ListAllRecords(r.Context(), storeParams) {
 			if err != nil {
 				log.Printf("Error retrieving records: %v", err)
@@ -559,15 +532,7 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// データがない場合（日付範囲が無効な場合のみ）
-	if len(data) == 0 {
-		svg := ""
-		w.Header().Set("Content-Type", "image/svg+xml")
-		w.Write([]byte(svg))
-		return
-	}
-
-	// SVGの生成
+	// SVGの生成（データが空でもFrom/Toがあれば0値のセルを表示）
 	opts := &heatmap.Options{
 		CellSize:    12,
 		CellPadding: 2,
@@ -575,6 +540,8 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		FontFamily:  "sans-serif",
 		Colors:      []string{"#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"},
 		ProjectName: project.Name,
+		From:        fromDate,
+		To:          toDate,
 	}
 
 	// tagsがある場合はタイトルに含める

@@ -24,7 +24,7 @@ func TestGenerateWeeklyHeatmapSVG_EmptyData(t *testing.T) {
 }
 
 func TestGenerateWeeklyHeatmapSVG_NilOptions(t *testing.T) {
-	// デフォルトオプションで正常に動作することを確認
+	// nilオプションではデフォルト値が使われるが、From/Toが未設定なので空文字列が返る
 	now := time.Now()
 	data := []Data{
 		{Date: now, Value: 5},
@@ -32,12 +32,8 @@ func TestGenerateWeeklyHeatmapSVG_NilOptions(t *testing.T) {
 
 	svg := GenerateWeeklyHeatmapSVG(data, nil)
 
-	if svg == "" {
-		t.Error("Expected non-empty SVG with nil options")
-	}
-
-	if !strings.Contains(svg, "<svg") {
-		t.Error("Expected SVG tag in output")
+	if svg != "" {
+		t.Error("Expected empty SVG with nil options (From/To not set)")
 	}
 }
 
@@ -62,6 +58,8 @@ func TestGenerateWeeklyHeatmapSVG_WithData(t *testing.T) {
 		FontFamily:  "sans-serif",
 		Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
 		ProjectName: "Test Project",
+		From:        time.Date(2025, 5, 19, 0, 0, 0, 0, time.UTC), // Monday before 2025-05-21
+		To:          time.Date(2025, 5, 22, 23, 59, 59, 0, time.UTC),
 	}
 
 	svg := GenerateWeeklyHeatmapSVG(data, opts)
@@ -113,6 +111,8 @@ func TestGenerateWeeklyHeatmapSVG_WithTags(t *testing.T) {
 		Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
 		ProjectName: "Test Project",
 		Tags:        []string{"work", "coding"},
+		From:        time.Date(2025, 5, 19, 0, 0, 0, 0, time.UTC),
+		To:          time.Date(2025, 5, 22, 23, 59, 59, 0, time.UTC),
 	}
 
 	svg := GenerateWeeklyHeatmapSVG(data, opts)
@@ -155,6 +155,8 @@ func TestGenerateWeeklyHeatmapSVG_TimeSlotCalculation(t *testing.T) {
 			FontSize:    10,
 			FontFamily:  "sans-serif",
 			Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
+			From:        time.Date(2025, 5, 19, 0, 0, 0, 0, time.UTC),
+			To:          time.Date(2025, 5, 22, 23, 59, 59, 0, time.UTC),
 		}
 
 		svg := GenerateWeeklyHeatmapSVG(data, opts)
@@ -181,6 +183,8 @@ func TestGenerateWeeklyHeatmapSVG_WeekAlignment(t *testing.T) {
 		FontSize:    10,
 		FontFamily:  "sans-serif",
 		Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
+		From:        time.Date(2025, 5, 19, 0, 0, 0, 0, time.UTC),
+		To:          time.Date(2025, 6, 15, 23, 59, 59, 0, time.UTC), // 4 weeks
 	}
 
 	svg := GenerateWeeklyHeatmapSVG(data, opts)
@@ -212,6 +216,8 @@ func TestGenerateWeeklyHeatmapSVG_Tooltip(t *testing.T) {
 		FontSize:    10,
 		FontFamily:  "sans-serif",
 		Colors:      []string{"#f0f0f0", "#c6e48b", "#7bc96f", "#239a3b", "#196127", "#0d4429"},
+		From:        time.Date(2025, 5, 19, 0, 0, 0, 0, time.UTC),
+		To:          time.Date(2025, 5, 22, 23, 59, 59, 0, time.UTC),
 	}
 
 	svg := GenerateWeeklyHeatmapSVG(data, opts)

@@ -22,13 +22,14 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 		}
 	}
 
-	if len(data) == 0 {
+	// determine date range from options
+	startDate := opts.From
+	endDate := opts.To
+
+	// From/Toが設定されていない場合は空文字列を返す
+	if startDate.IsZero() || endDate.IsZero() {
 		return ""
 	}
-
-	// determine date range from data (assuming data is in ascending order)
-	startDate := data[0].Date
-	endDate := data[len(data)-1].Date
 
 	// map date string to value
 	// Aggregates values for duplicate dates (same date can appear multiple times)
@@ -108,10 +109,7 @@ func GenerateYearlyHeatmapSVG(data []Data, opts *Options) string {
 		for i := range 7 {
 			current := firstSunday.Add(time.Duration(w*7+i) * oneDay)
 			key := current.Format("2006-01-02")
-			value, exists := valueMap[key]
-			if !exists {
-				continue
-			}
+			value := valueMap[key] // 存在しない場合は0
 			level := 0
 
 			// 0値の場合は常にレベル0（薄いグレー）を使用
